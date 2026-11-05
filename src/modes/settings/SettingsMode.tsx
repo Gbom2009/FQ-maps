@@ -1,6 +1,7 @@
 import { useApp } from "../../store/app";
 import { useT } from "../../i18n";
 import { useDrive } from "../../store/drive";
+import { VehiclesSettings } from "./VehiclesSettings";
 
 function Choice<T extends string>({ value, options, onChange }: {
   value: T; options: { v: T; label: string }[]; onChange: (v: T) => void;
@@ -49,6 +50,7 @@ export function SettingsMode() {
             {t("settings.devTools")}
           </label>
         </div>
+        <VehiclesSettings />
         <div className="text-[11px] text-fq-muted">{t("settings.version")} {__APP_VERSION__}</div>
       </div>
     </div>

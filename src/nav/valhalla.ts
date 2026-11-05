@@ -61,11 +61,26 @@ export interface RouteRequest {
   /** Valhalla only computes alternates for 2-location routes. */
   alternates?: number;
   language?: "nl" | "en";
+  /** Trailer attached → `truck` costing with the combined dimensions. */
+  tow?: TowRouting;
+}
+
+export interface TowRouting {
+  lengthM: number;
+  widthM: number;
+  heightM: number;
+  weightT: number;
+  /** motorway tow cap, so travel times reflect towing speed */
+  topSpeedKmh: number;
 }
 
 /** Build the Valhalla /route JSON body. Pure, so it's unit-tested. */
 export function buildRouteBody(req: RouteRequest) {
-  const costing = req.costing ?? "auto";
+  const costing: Costing = req.tow ? "truck" : req.costing ?? "auto";
+  const tow = req.tow ? {
+    length: req.tow.lengthM, width: req.tow.widthM, height: req.tow.heightM, weight: req.tow.weightT,
+    top_speed: req.tow.topSpeedKmh,
+  } : {};
   const o = req.options;
   const body: Record<string, unknown> = {
     // every stop is a real stop ("break") with its own leg, not a pass-through
@@ -80,6 +95,7 @@ export function buildRouteBody(req: RouteRequest) {
         use_tolls: o.avoidTolls ? 0 : 0.5,
         use_ferry: o.avoidFerries ? 0 : 0.5,
         ...(o.shortest ? { shortest: true } : {}),
+        ...tow,
       },
     },
     units: "kilometers",
