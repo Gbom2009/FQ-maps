@@ -1,0 +1,19 @@
+{
+  "tagline": "FEEL THE MUSIQ",
+  "mode.plan": "Plannen",
+  "mode.drive": "Rijden",
+  "mode.settings": "Instellingen",
+  "plan.search": "Zoek adres of venue…",
+  "plan.soon": "Zoeken, stops en routes komen in fase 2.",
+  "drive.nextDrop": "Next drop",
+  "drive.noRoute": "Geen actieve route",
+  "drive.mute": "Geluid uit",
+  "drive.recenter": "Centreren",
+  "drive.end": "Stop route",
+  "settings.language": "Taal",
+  "settings.theme": "Kaartthema",
+  "settings.theme.night": "Nacht",
+  "settings.theme.day": "Dag",
+  "settings.autoTheme": "Automatisch (zonsopkomst/-ondergang)",
+  "settings.version": "Versie"
+}

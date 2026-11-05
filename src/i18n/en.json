@@ -1,0 +1,19 @@
+{
+  "tagline": "FEEL THE MUSIQ",
+  "mode.plan": "Plan",
+  "mode.drive": "Drive",
+  "mode.settings": "Settings",
+  "plan.search": "Search address or venue…",
+  "plan.soon": "Search, stops and routes arrive in phase 2.",
+  "drive.nextDrop": "Next drop",
+  "drive.noRoute": "No active route",
+  "drive.mute": "Mute",
+  "drive.recenter": "Recenter",
+  "drive.end": "End route",
+  "settings.language": "Language",
+  "settings.theme": "Map theme",
+  "settings.theme.night": "Night",
+  "settings.theme.day": "Day",
+  "settings.autoTheme": "Automatic (sunrise/sunset)",
+  "settings.version": "Version"
+}
