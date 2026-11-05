@@ -5,6 +5,7 @@ import { DEFAULT_OPTIONS, getRoutes, type Route, type RouteOptions } from "../na
 import { useApp } from "./app";
 
 export interface Stop extends Place { key: string }
+export interface ActiveRoute { route: Route; stops: Stop[]; sessionId: number; options: RouteOptions }
 
 interface PlanState {
   stops: Stop[];
@@ -13,8 +14,10 @@ interface PlanState {
   selected: number;
   loading: boolean;
   error: string | null;
-  /** Route handed over to Drive mode. */
-  active: { route: Route; stops: Stop[] } | null;
+  /** Route handed over to Drive mode. sessionId stays the same across reroutes. */
+  active: ActiveRoute | null;
+  /** Replace the active route (reroute) without starting a new session. */
+  setActiveRoute: (route: Route, stops: Stop[]) => void;
 
   addStop: (p: Place, at?: number) => void;
   removeStop: (key: string) => void;
@@ -92,10 +95,14 @@ export const usePlan = create<PlanState>()(
         const { routes, selected, stops } = get();
         const route = routes[selected];
         if (!route) return;
-        set({ active: { route, stops } });
+        set({ active: { route, stops, sessionId: Date.now(), options: get().options } });
         useApp.getState().setMode("drive");
       },
       endDrive: () => set({ active: null }),
+      setActiveRoute: (route, stops) => {
+        const a = get().active;
+        if (a) set({ active: { ...a, route, stops } });
+      },
     }),
     {
       name: "fq-plan",
