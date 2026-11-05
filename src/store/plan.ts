@@ -3,9 +3,23 @@ import { persist } from "zustand/middleware";
 import type { Place } from "../nav/geocode";
 import { DEFAULT_OPTIONS, getRoutes, type Route, type RouteOptions } from "../nav/valhalla";
 import { useApp } from "./app";
+import { currentTow, useVehicles, type TowProfile } from "../features/vehicles/store";
+import type { TowRouting } from "../nav/valhalla";
+
+/** Valhalla truck parameters for the attached trailer, or undefined without one. */
+export function towRouting(t: TowProfile | null): TowRouting | undefined {
+  if (!t) return undefined;
+  return { ...t.dims, topSpeedKmh: t.caps.motorway };
+}
 
 export interface Stop extends Place { key: string }
-export interface ActiveRoute { route: Route; stops: Stop[]; sessionId: number; options: RouteOptions }
+export interface ActiveRoute {
+  route: Route; stops: Stop[]; sessionId: number; options: RouteOptions;
+  /** trailer profile at the time of starting (null = no trailer) */
+  tow: TowProfile | null;
+  /** linked gig, for Share ETA and the trip log */
+  gigId?: string;
+}
 
 interface PlanState {
   stops: Stop[];
@@ -14,6 +28,8 @@ interface PlanState {
   selected: number;
   loading: boolean;
   error: string | null;
+  /** gig being planned via the Gigs tab, handed to the drive session */
+  planningGigId?: string;
   /** Route handed over to Drive mode. sessionId stays the same across reroutes. */
   active: ActiveRoute | null;
   /** Replace the active route (reroute) without starting a new session. */
@@ -28,7 +44,7 @@ interface PlanState {
   setOption: <K extends keyof RouteOptions>(k: K, v: RouteOptions[K]) => void;
   select: (i: number) => void;
   compute: () => Promise<void>;
-  startDrive: () => void;
+  startDrive: (gigId?: string) => void;
   endDrive: () => void;
 }
 
@@ -67,7 +83,7 @@ export const usePlan = create<PlanState>()(
         void get().compute();
       },
       reverseStops: () => { set({ stops: [...get().stops].reverse() }); void get().compute(); },
-      clearStops: () => { inflight?.abort(); set({ stops: [], routes: [], selected: 0, error: null, loading: false }); },
+      clearStops: () => { inflight?.abort(); set({ stops: [], routes: [], selected: 0, error: null, loading: false, planningGigId: undefined }); },
       setOption: (k, v) => { set({ options: { ...get().options, [k]: v } }); void get().compute(); },
       select: (i) => set({ selected: i }),
 
@@ -80,7 +96,7 @@ export const usePlan = create<PlanState>()(
         set({ loading: true, error: null });
         try {
           const routes = await getRoutes(
-            { stops, options, alternates: 2, language: useApp.getState().lang },
+            { stops, options, alternates: 2, language: useApp.getState().lang, tow: towRouting(currentTow()) },
             ctrl.signal,
           );
           if (ctrl.signal.aborted) return;
@@ -91,11 +107,11 @@ export const usePlan = create<PlanState>()(
         }
       },
 
-      startDrive: () => {
+      startDrive: (gigId) => {
         const { routes, selected, stops } = get();
         const route = routes[selected];
         if (!route) return;
-        set({ active: { route, stops, sessionId: Date.now(), options: get().options } });
+        set({ active: { route, stops, sessionId: Date.now(), options: get().options, tow: currentTow(), gigId: gigId ?? get().planningGigId } });
         useApp.getState().setMode("drive");
       },
       endDrive: () => set({ active: null }),
@@ -107,8 +123,16 @@ export const usePlan = create<PlanState>()(
     {
       name: "fq-plan",
       // routes are cached separately; recompute on load
-      partialize: ({ stops, options, active }) => ({ stops, options, active }),
+      partialize: ({ stops, options, active, planningGigId }) => ({ stops, options, active, planningGigId }),
       onRehydrateStorage: () => (s) => { if (s && s.stops.length >= 2) void s.compute(); },
     },
   ),
 );
+
+// Re-route the plan when the vehicle/trailer selection or their specs change.
+useVehicles.subscribe((s, prev) => {
+  if (s.activeTrailerId !== prev.activeTrailerId || s.activeVehicleId !== prev.activeVehicleId
+    || (s.activeTrailerId && (s.trailers !== prev.trailers || s.vehicles !== prev.vehicles || s.towCaps !== prev.towCaps))) {
+    void usePlan.getState().compute();
+  }
+});

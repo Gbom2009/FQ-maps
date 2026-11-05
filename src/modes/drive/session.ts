@@ -6,10 +6,16 @@ import { PromptPlanner, promptText, speak, stopSpeaking } from "../../nav/voice"
 import { fetchSpeedLimits, segmentAt, effectiveLimit, isMotorwayClass, type LimitSegment } from "../../nav/speed";
 import { getRoutes, type Route } from "../../nav/valhalla";
 import { decodePolyline } from "../../nav/polyline";
-import { usePlan, type ActiveRoute, type Stop } from "../../store/plan";
+import { usePlan, towRouting, type ActiveRoute, type Stop } from "../../store/plan";
 import { useDrive, LOCK_KMH, UNLOCK_AFTER_MS } from "../../store/drive";
 import { useApp } from "../../store/app";
 import { translate } from "../../i18n";
+import { towCapFor } from "../../features/vehicles/profiles";
+import type { TowProfile } from "../../features/vehicles/store";
+import { computeTowWarnings, fetchHeights, type TowWarning } from "../../features/vehicles/towWarnings";
+import { recordTrip } from "../../features/stats/tripLog";
+import { activeVehicle } from "../../features/vehicles/store";
+import { haversine } from "../../nav/geo";
 
 /**
  * Drive session controller (framework-free). Owns the location provider,
@@ -31,6 +37,12 @@ let limits: LimitSegment[] = [];
 let sessionId: number | null = null;
 let lastReroute = 0;
 let slowSince: number | null = null;
+let tow: TowProfile | null = null;
+let heights: [number, number][] = [];
+let towWarnings: TowWarning[] = [];
+let warned = new Set<number>();
+/** announce tow warnings this far ahead */
+const TOW_WARN_M = 300;
 
 export const simulator = () => sim;
 
@@ -55,11 +67,34 @@ function loadRoute(route: Route) {
   tracker = new GuidanceTracker(geo);
   planner = new PromptPlanner();
   limits = [];
-  useDrive.getState().set({ limitsStatus: "loading" });
+  heights = [];
+  towWarnings = tow ? computeTowWarnings(geo, []) : [];
+  warned = new Set();
+  useDrive.getState().set({ limitsStatus: "loading", towWarning: null });
   const forSession = sessionId;
-  fetchSpeedLimits(route.legs.map((l) => l.shape), decodePolyline)
-    .then((l) => { if (sessionId === forSession) { limits = l; useDrive.getState().set({ limitsStatus: "ok" }); } })
+  const g = geo;
+  const refreshWarnings = () => { if (tow && geo === g) towWarnings = computeTowWarnings(g, limits, heights); };
+  fetchSpeedLimits(route.legs.map((l) => l.shape), decodePolyline, tow ? "truck" : "auto")
+    .then((l) => { if (sessionId === forSession) { limits = l; refreshWarnings(); useDrive.getState().set({ limitsStatus: "ok" }); } })
     .catch(() => { if (sessionId === forSession) useDrive.getState().set({ limitsStatus: "error" }); });
+  if (tow) {
+    fetchHeights(route.shape)
+      .then((h) => { if (sessionId === forSession) { heights = h; refreshWarnings(); } })
+      .catch(() => { /* no elevation: descents just aren’t warned */ });
+  }
+}
+
+function checkTowWarnings(g: GuidanceState) {
+  if (!tow) return;
+  const d = useDrive.getState();
+  const ahead = towWarnings.find((w) => w.along >= g.along - 20 && w.along - g.along <= TOW_WARN_M);
+  if (ahead && !warned.has(ahead.along)) {
+    warned.add(ahead.along);
+    const k = ahead.kind === "sharp" ? "tow.voice.sharp" : ahead.kind === "narrow" ? "tow.voice.narrow" : "tow.voice.descent";
+    say(t(k));
+  }
+  const show = ahead ?? null;
+  if (show?.along !== d.towWarning?.along) d.set({ towWarning: show });
 }
 
 function updateLock(f: Fix) {
@@ -70,15 +105,40 @@ function updateLock(f: Fix) {
   if (f.t - slowSince >= UNLOCK_AFTER_MS) d.set({ locked: false });
 }
 
+// ---- trip log (Setlist, Phase 5 shows it): distance actually driven --------
+let trip: { startedAt: number; startAlong: number; km: number; last: [number, number] | null } | null = null;
+
+function trackTrip(f: Fix) {
+  if (!trip || f.speedKmh < 2) return;
+  const p: [number, number] = [f.lon, f.lat];
+  if (trip.last) trip.km += haversine(trip.last, p) / 1000;
+  trip.last = p;
+}
+
+function finishTrip(arrived: boolean) {
+  const a = usePlan.getState().active;
+  if (!trip || !a || trip.km < 0.2) { trip = null; return; }
+  recordTrip({
+    startedAt: trip.startedAt, endedAt: Date.now(), km: Math.round(trip.km * 10) / 10,
+    vehicle: a.tow?.vehicle.name ?? activeVehicle()?.name, trailer: a.tow?.trailer.name,
+    gigId: a.gigId, destination: a.stops[a.stops.length - 1]?.name, arrived,
+  });
+  trip = null;
+}
+
 function onFix(f: Fix) {
   updateLock(f);
+  trackTrip(f);
   const d = useDrive.getState();
   if (!geo || !tracker || d.arrived) { d.set({ fix: f, gpsError: null }); return; }
 
   const g = tracker.update(f);
   const seg = segmentAt(limits, geoSegment(g));
-  const limitKmh = effectiveLimit(seg?.limitKmh, undefined /* tow cap: Phase 4 */);
-  d.set({ fix: f, guidance: g, limitKmh, gpsError: null });
+  const capKmh = tow ? towCapFor(tow.caps, seg?.roadClass, seg?.limitKmh) : undefined;
+  // HUD uses the lower of the posted limit and the tow cap
+  const limitKmh = effectiveLimit(seg?.limitKmh, capKmh);
+  d.set({ fix: f, guidance: g, limitKmh, postedKmh: seg?.limitKmh, capKmh, gpsError: null });
+  checkTowWarnings(g);
 
   // voice
   if (g.next >= 0) {
@@ -93,6 +153,7 @@ function onFix(f: Fix) {
 
   if (g.arrived) {
     d.set({ arrived: true });
+    finishTrip(true);
     setTimeout(() => { if (sim) sim.paused = true; }, 3000);
     return;
   }
@@ -129,6 +190,7 @@ async function reroute(f: Fix, g: GuidanceState | null, skipNextStop = false) {
       stops: [{ lat: f.lat, lon: f.lon, heading: f.speedKmh > 5 ? f.heading : undefined }, ...remaining],
       options: active.options,
       language: useApp.getState().lang,
+      tow: towRouting(active.tow),
     });
     if (!route || sessionId !== active.sessionId) return;
     usePlan.getState().setActiveRoute(route, [here, ...remaining]);
@@ -149,6 +211,8 @@ async function reroute(f: Fix, g: GuidanceState | null, skipNextStop = false) {
 export function start(active: ActiveRoute) {
   stop();
   sessionId = active.sessionId;
+  tow = active.tow ?? null;
+  trip = { startedAt: Date.now(), startAlong: 0, km: 0, last: null };
   const d = useDrive.getState();
   d.set({ guidance: null, arrived: false, reroutes: 0, rerouting: false, rerouteError: null, follow: true, simPaused: false });
   loadRoute(active.route);
@@ -174,6 +238,7 @@ export function ensureProvider() {
 }
 
 export function stop() {
+  finishTrip(false);
   provider?.stop();
   provider = null;
   sim = null;
@@ -181,8 +246,10 @@ export function stop() {
   tracker = null;
   sessionId = null;
   limits = [];
+  tow = null;
+  towWarnings = [];
   stopSpeaking();
-  useDrive.getState().set({ guidance: null, fix: null, locked: false, arrived: false, limitKmh: undefined, limitsStatus: "none" });
+  useDrive.getState().set({ guidance: null, fix: null, locked: false, arrived: false, limitKmh: undefined, postedKmh: undefined, capKmh: undefined, limitsStatus: "none", towWarning: null });
 }
 
 export function skipStop() {

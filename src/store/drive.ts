@@ -21,6 +21,11 @@ export interface DriveState {
   guidance: GuidanceState | null;
   /** effective speed limit at the current position */
   limitKmh?: number;
+  /** posted (OSM) limit and tow cap, shown separately in tow mode */
+  postedKmh?: number;
+  capKmh?: number;
+  /** upcoming tow hazard (sharp turn / narrow road / steep descent) */
+  towWarning: import("../features/vehicles/towWarnings").TowWarning | null;
   limitsStatus: "none" | "loading" | "ok" | "error";
   follow: boolean;
   rerouting: boolean;
@@ -47,6 +52,7 @@ export const useDrive = create<DriveState>()(
       fix: null,
       guidance: null,
       limitsStatus: "none",
+      towWarning: null,
       follow: true,
       rerouting: false,
       rerouteError: null,
