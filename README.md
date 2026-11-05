@@ -7,6 +7,23 @@ Tauri 2 + React + TypeScript + Vite + Tailwind v4 + MapLibre GL. See `CLAUDE.md`
 - Phase 1 — skeleton: branded map, Plan / Drive / Settings, NL/EN, day/night.
 - Phase 2 — plan core: PDOK→Photon search, pins, multi-stop, Valhalla routes + alternatives.
 - Phase 3 — drive core: follow camera, HUD, Dutch voice, speed limits, off-route + reroute, safety lock, simulator.
+- Phase 4 — Funqtion features: vehicle/trailer profiles, trailer-aware truck routing + tow speed cap, tow warnings,
+  Gig Day (leave-by + reminders), venue cards (load-in door, trailer parking, contact, photos), Share ETA, waveform route.
+
+## Towing
+Attach a trailer in Plan → route options (or Settings → Aanhangers). Routes then use Valhalla `truck` costing with the
+combined car + trailer length/width/height/weight, so low bridges and weight limits are avoided where OSM has the data.
+Fill in the real sizes in Settings — empty fields fall back to typical values and the planner says "deels geschat".
+Tow speed caps default to **90 / 80 / 50 km/h** (motorway / outside / inside built-up area) — **verify these for your
+own combination**. The HUD shows the lower of the posted limit and the cap. In tow mode you also get voice + HUD
+warnings for sharp turns, narrow roads (by road class) and descents steeper than 6 % (Valhalla elevation data).
+
+## Gig Day
+Gigs tab: venue, date, load-in time, setup buffer (default 60 min) and traffic margin. "Bereken reistijd" routes from
+your current position (or home) with the active car/trailer and shows **vertrek uiterlijk** (leave-by).
+Reminders fire 15 min before and at leave-by **while the app is open** (in-app banner + system notification where
+the webview allows). Reliable background notifications on iOS need the Tauri notification plugin — Phase 6.
+**Deel ETA** opens the share sheet on iPhone; on Windows (no share sheet in WebView2) it copies the message.
 
 ## Test-driving with the simulator
 On PC the location source defaults to **Simulator** (Settings → Locatiebron). Plan a route, press
