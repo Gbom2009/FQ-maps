@@ -10,6 +10,8 @@ import { hasVoice, stopSpeaking } from "../../nav/voice";
 import { ManeuverIcon } from "./ManeuverIcon";
 import { SimPanel } from "./SimPanel";
 import * as session from "./session";
+import { etaMessage, shareText } from "../../features/gigs/shareEta";
+import { useGigs } from "../../features/gigs/store";
 
 /** Maneuver distance the way a HUD should show it: coarse when far, fine when close. */
 function hudDistance(m: number, lang: "nl" | "en") {
@@ -28,7 +30,17 @@ export function DriveMode() {
   const setMode = useApp((s) => s.setMode);
   const active = usePlan((s) => s.active);
   const endDrive = usePlan((s) => s.endDrive);
-  const { fix, guidance: g, limitKmh, muted, follow, rerouting, rerouteError, arrived, gpsError, locked, source, devTools, set } = useDrive();
+  const { fix, guidance: g, limitKmh, postedKmh, capKmh, towWarning, muted, follow, rerouting, rerouteError, arrived, gpsError, locked, source, devTools, set } = useDrive();
+  const gig = useGigs((s) => s.gigs.find((x) => x.id === active?.gigId));
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+  const towing = !!active?.tow;
+  const share = async () => {
+    if (!g) return;
+    const dest = gig ? useGigs.getState().venues.find((v) => v.id === gig.venueId)?.name : active?.stops[active.stops.length - 1]?.name;
+    const r = await shareText(etaMessage(new Date(Date.now() + g.remainingS * 1000), { lang, towing, venue: dest }));
+    setShareMsg(r === "copied" ? t("share.copied") : r === "failed" ? t("share.failed") : null);
+    setTimeout(() => setShareMsg(null), 3000);
+  };
 
   // Guidance geometry is owned by the session; the HUD only needs maneuver text, so derive it cheaply.
   const [geo, setGeo] = useState(() => (active ? buildGeometry(active.route) : null));
@@ -88,6 +100,11 @@ export function DriveMode() {
         ) : (
           <div className="mt-1 text-lg text-fq-muted">{gpsError ? `${t("drive.gpsError")}: ${gpsError}` : t("drive.waitingGps")}</div>
         )}
+        {towWarning && !arrived && (
+          <div className="mt-3 flex items-center gap-2 border border-fq-warn px-3 py-2 text-base text-fq-warn">
+            ⚠ {towWarning.kind === "sharp" ? t("tow.warn.sharp") : towWarning.kind === "narrow" ? t("tow.warn.narrow") : `${t("tow.warn.descent")} ${towWarning.gradePct}%`}
+          </div>
+        )}
         {rerouting && <div className="mt-2 text-sm text-fq-warn">{t("drive.rerouting")}</div>}
         {rerouteError && !rerouting && <div className="mt-2 text-sm text-fq-danger">{t("drive.rerouteFailed")}</div>}
         {noVoice && !muted && <div className="mt-2 text-[11px] text-fq-muted">{t("drive.noVoice")}</div>}
@@ -99,8 +116,15 @@ export function DriveMode() {
           <span className={`font-display text-4xl ${speeding ? "text-fq-danger" : "text-fq-strong"}`}>{speed}</span>
           <span className="text-[11px] text-fq-muted">km/h</span>
         </div>
+        {towing && (
+          <div className="flex h-16 flex-col items-center justify-center border border-fq-primary bg-fq-bg/92 px-2 text-fq-primary" title={active?.tow?.trailer.name}>
+            <span className="text-[10px] uppercase tracking-widest">{t("tow.badge")}</span>
+            {capKmh !== undefined && <span className="font-display text-lg leading-none">{capKmh}</span>}
+          </div>
+        )}
         {limitKmh !== undefined && (
-          <div className="flex h-16 w-16 items-center justify-center rounded-full border-[6px] border-[#e3262b] bg-white font-display text-2xl text-[#040404]" aria-label={`${t("drive.limit")} ${limitKmh}`}>
+          <div className="flex h-16 w-16 items-center justify-center rounded-full border-[6px] border-[#e3262b] bg-white font-display text-2xl text-[#040404]" aria-label={`${t("drive.limit")} ${limitKmh}`}
+            title={towing && postedKmh !== undefined && postedKmh !== limitKmh ? `${t("tow.posted")} ${postedKmh}` : undefined}>
             {limitKmh}
           </div>
         )}
@@ -108,7 +132,7 @@ export function DriveMode() {
 
       {/* --- ETA strip ------------------------------------------------------- */}
       {active && g && !arrived && (
-        <section className="pointer-events-auto absolute bottom-28 left-[15.5rem] right-32 flex items-center justify-around gap-2 border border-fq-line bg-fq-bg/92 px-3 py-2 max-md:left-4 max-md:right-4">
+        <section className={`pointer-events-auto absolute bottom-28 ${towing ? "left-[20.5rem]" : "left-[15.5rem]"} right-32 flex items-center justify-around gap-2 border border-fq-line bg-fq-bg/92 px-3 py-2 max-md:left-4 max-md:right-4`}>
           <div className="text-center">
             <div className="font-display text-3xl text-fq-primary">{formatClock(new Date(Date.now() + g.remainingS * 1000))}</div>
             <div className="text-[11px] text-fq-muted">{t("drive.eta")}</div>
@@ -136,11 +160,18 @@ export function DriveMode() {
         {active && multiStop && !arrived && (
           <button onClick={session.skipStop} className="fq-bracket h-16 w-24 bg-fq-bg/92 text-sm">{t("drive.nextStop")}</button>
         )}
+        {active && g && !arrived && (
+          <button disabled={locked} onClick={share} title={locked ? t("drive.lockedMsg") : undefined}
+            className="fq-bracket h-16 w-24 bg-fq-bg/92 text-sm disabled:opacity-40">{t("share.eta")}</button>
+        )}
         <button disabled={!active} onClick={end} className="fq-bracket h-16 w-24 bg-fq-bg/92 text-sm disabled:opacity-40">
           {t("drive.end")}
         </button>
       </div>
 
+      {shareMsg && (
+        <div className="pointer-events-none absolute left-1/2 top-1/3 -translate-x-1/2 border border-fq-line bg-fq-bg/95 px-4 py-2 text-sm text-fq-strong">{shareMsg}</div>
+      )}
       {locked && (
         <div className="pointer-events-none absolute right-4 top-[max(1rem,env(safe-area-inset-top))] border border-fq-line bg-fq-bg/92 px-3 py-1.5 text-[11px] text-fq-muted max-md:hidden">
           🔒 {t("drive.locked")}

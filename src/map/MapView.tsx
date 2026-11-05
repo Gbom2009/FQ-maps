@@ -13,6 +13,8 @@ import type { Route } from "../nav/valhalla";
 import { useDrive } from "../store/drive";
 import { FollowCamera } from "./followCamera";
 import { remainingShape } from "../modes/drive/session";
+import { useGigs } from "../features/gigs/store";
+import { setWaveformMode, startWaveform } from "./waveformRoute";
 type Map = maplibregl.Map;
 
 // MapLibre 6 looks for its worker next to its own module. In dev that works
@@ -88,9 +90,16 @@ export function MapView({ mode }: Props) {
     m.on("mouseenter", ALT_LAYER, () => { m.getCanvas().style.cursor = "pointer"; });
     m.on("mouseleave", ALT_LAYER, () => { m.getCanvas().style.cursor = ""; });
 
+    // Venue pin picking: the next tap (or long-press) sets the load-in door / trailer spot.
+    m.on("click", (e) => {
+      if (!useGigs.getState().picking) return;
+      useGigs.getState().finishPicking({ lat: e.lngLat.lat, lon: e.lngLat.lng });
+    });
+
     // Long-press / right-click → drop pin → "add stop" popup.
     const offLong = onLongPress(m, async (at) => {
       if (modeRef.current !== "plan") return;
+      if (useGigs.getState().picking) { useGigs.getState().finishPicking({ lat: at.lat, lon: at.lng }); return; }
       const lang = useApp.getState().lang;
       const box = document.createElement("div");
       box.style.cssText = "font:300 13px var(--fq-font-body);color:var(--fq-text);min-width:180px";
@@ -135,7 +144,41 @@ export function MapView({ mode }: Props) {
       }
     });
 
-    return () => { unsub(); offLong(); markers.current.forEach((mk) => mk.remove()); m.remove(); map.current = null; };
+    // Venue pins (address / load-in door / trailer parking) for the venue open in the editor.
+    let venueMarkers: maplibregl.Marker[] = [];
+    const pinEl = (label: string, color: string) => {
+      const el = document.createElement("div");
+      el.textContent = label;
+      el.style.cssText = `width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:4px;font:700 12px var(--fq-font-body);color:#040404;background:${color};border:2px solid #040404`;
+      return el;
+    };
+    const drawVenue = (fly: boolean) => {
+      venueMarkers.forEach((x) => x.remove());
+      venueMarkers = [];
+      const s = useGigs.getState();
+      const v = s.venues.find((x) => x.id === s.focusVenueId);
+      if (!v) return;
+      const add = (p: { lat: number; lon: number } | undefined, label: string, color: string) => {
+        if (p) venueMarkers.push(new maplibregl.Marker({ element: pinEl(label, color) }).setLngLat([p.lon, p.lat]).addTo(m));
+      };
+      add(v.address, "A", "#f0f0f0");
+      add(v.loadInDoor, "D", "#f68712");
+      add(v.trailerParking, "P", "#f68712");
+      const pts = [v.address, v.loadInDoor, v.trailerParking].filter(Boolean) as { lat: number; lon: number }[];
+      if (fly && pts.length) m.easeTo({ center: [pts[0].lon, pts[0].lat], zoom: Math.max(m.getZoom(), 16), duration: 600 });
+    };
+    const unsubGigs = useGigs.subscribe((s, prev) => {
+      if (s.focusVenueId !== prev.focusVenueId || s.venues !== prev.venues) {
+        const addr = (st: typeof s) => st.venues.find((x) => x.id === st.focusVenueId)?.address?.id;
+        // fly when another venue opens, or the open venue gets a new address
+        drawVenue(s.focusVenueId !== prev.focusVenueId || addr(s) !== addr(prev));
+      }
+      m.getCanvas().style.cursor = s.picking ? "crosshair" : "";
+    });
+
+    const stopWave = startWaveform(m);
+
+    return () => { stopWave(); unsubGigs(); venueMarkers.forEach((x) => x.remove()); unsub(); offLong(); markers.current.forEach((mk) => mk.remove()); m.remove(); map.current = null; };
   }, []);
 
   // ---- theme --------------------------------------------------------------
@@ -183,6 +226,8 @@ export function MapView({ mode }: Props) {
       return mk;
     });
   }, [stops, active, mode]);
+
+  useEffect(() => { setWaveformMode(mode); }, [mode]);
 
   // ---- camera per mode ----------------------------------------------------
   useEffect(() => {

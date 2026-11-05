@@ -17,7 +17,8 @@ export function ensureRouteLayers(map: Map) {
   const orange = cssVar("--fq-route", "#f68712");
   const alt = cssVar("--fq-muted", "#8d8d8d");
   const bg = cssVar("--fq-bg", "#040404");
-  map.addSource(SRC, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  // lineMetrics enables line-progress for the waveform pulse gradient
+  map.addSource(SRC, { type: "geojson", lineMetrics: true, data: { type: "FeatureCollection", features: [] } });
   const w = (base: number) => ["interpolate", ["exponential", 1.4], ["zoom"], 6, base * 0.5, 12, base, 18, base * 3] as never;
   map.addLayer({ id: "fq-route-alt-casing", type: "line", source: SRC, filter: ["==", ["get", "selected"], false],
     layout: { "line-cap": "round", "line-join": "round" },
@@ -34,6 +35,9 @@ export function ensureRouteLayers(map: Map) {
   map.addLayer({ id: "fq-route-main", type: "line", source: SRC, filter: ["==", ["get", "selected"], true],
     layout: { "line-cap": "round", "line-join": "round" },
     paint: { "line-color": orange, "line-width": w(5) } });
+  map.addLayer({ id: PULSE_LAYER, type: "line", source: SRC, filter: ["==", ["get", "selected"], true],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-width": w(7), "line-blur": 2, "line-gradient": ["interpolate", ["linear"], ["line-progress"], 0, "rgba(0,0,0,0)", 1, "rgba(0,0,0,0)"] } });
 }
 
 export function setRoutes(map: Map, routes: Route[], selected: number) {
@@ -52,3 +56,4 @@ export function setRoutes(map: Map, routes: Route[], selected: number) {
 }
 
 export const ALT_LAYER = "fq-route-alt";
+export const PULSE_LAYER = "fq-route-pulse";

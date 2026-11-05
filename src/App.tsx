@@ -12,6 +12,10 @@ import * as session from "./modes/drive/session";
 import { keepAwake } from "./location/wakeLock";
 import { isNight } from "./theme/sun";
 import { HOME } from "./config/services";
+import { setReminderBanner, startReminders } from "./features/gigs/reminders";
+
+// Leave-by reminders run for the app lifetime.
+startReminders();
 
 const MODES: Mode[] = ["plan", "drive", "settings"];
 
@@ -22,6 +26,8 @@ export default function App() {
   const source = useDrive((s) => s.source);
   const t = useT();
   const [splash, setSplash] = useState(true);
+  const [reminder, setReminder] = useState<string | null>(null);
+  useEffect(() => { setReminderBanner(setReminder); return () => setReminderBanner(() => {}); }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -88,6 +94,13 @@ export default function App() {
         })}
       </nav>
 
+      {reminder && (
+        <div role="alert" className="absolute inset-x-4 top-[max(1rem,env(safe-area-inset-top))] z-40 mx-auto flex max-w-lg items-center gap-3 border border-fq-primary bg-fq-bg/95 px-4 py-3 text-fq-strong">
+          <span className="text-2xl">⏰</span>
+          <span className="flex-1 text-sm">{reminder}</span>
+          <button onClick={() => setReminder(null)} className="h-11 w-11 text-fq-muted" aria-label="close">×</button>
+        </div>
+      )}
       {splash && <Splash />}
     </div>
   );
