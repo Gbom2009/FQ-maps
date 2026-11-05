@@ -4,7 +4,19 @@ Personal navigation app for Team Funqtion — **FEEL THE MUSIQ**.
 Tauri 2 + React + TypeScript + Vite + Tailwind v4 + MapLibre GL. See `CLAUDE.md` for the full spec.
 
 ## Status
-Phase 1 (skeleton): branded map, Plan / Drive / Settings mode switcher, NL/EN toggle, day/night map theme.
+- Phase 1 — skeleton: branded map, Plan / Drive / Settings, NL/EN, day/night.
+- Phase 2 — plan core: PDOK→Photon search, pins, multi-stop, Valhalla routes + alternatives.
+- Phase 3 — drive core: follow camera, HUD, Dutch voice, speed limits, off-route + reroute, safety lock, simulator.
+
+## Test-driving with the simulator
+On PC the location source defaults to **Simulator** (Settings → Locatiebron). Plan a route, press
+**Start rijden**, and the car drives it at the planned speeds. The yellow panel in Drive mode:
+- **0.5×–8×** time warp, **GPS-ruis** (noise in metres)
+- **Van route af** — veers off the route to test off-route detection + rerouting
+- **GPX afspelen…** — replay any `.gpx` track as fake GPS
+- **Pauze** — the car parks (0 km/h), which also releases the safety lock after 4 s
+
+Safety lock: above 10 km/h only Drive mode works (mute, recenter, next stop, end route).
 
 ## Develop
 
