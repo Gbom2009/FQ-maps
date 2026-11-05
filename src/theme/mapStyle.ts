@@ -37,7 +37,18 @@ const FONT_BOLD = ["Noto Sans Bold"];
 const zoomWidth = (base: number): ExpressionSpecification =>
   ["interpolate", ["exponential", 1.5], ["zoom"], 6, base * 0.3, 12, base, 18, base * 8];
 
-export function buildMapStyle(theme: MapTheme): StyleSpecification {
+/** Glyphs are bundled in public/fonts (scripts/fetch-glyphs.mjs) so labels work offline. */
+function glyphsUrl(): string {
+  if (typeof location === "undefined") return services.tiles.glyphs;
+  return `${location.origin}${import.meta.env.BASE_URL}fonts/{fontstack}/{range}.pbf`;
+}
+
+export interface StyleOptions {
+  /** pmtiles:// URL of an offline pack (OpenMapTiles schema) instead of OpenFreeMap */
+  tilesUrl?: string;
+}
+
+export function buildMapStyle(theme: MapTheme, opts: StyleOptions = {}): StyleSpecification {
   const p = palettes[theme];
   const road = (id: string, classes: string[], color: string, w: number, minzoom = 0): LayerSpecification => ({
     id, type: "line", source: "omt", "source-layer": "transportation", minzoom,
@@ -98,9 +109,11 @@ export function buildMapStyle(theme: MapTheme): StyleSpecification {
   return {
     version: 8,
     name: `funqtion-${theme}`,
-    glyphs: services.tiles.glyphs,
+    glyphs: glyphsUrl(),
     sources: {
-      omt: { type: "vector", url: services.tiles.tilejson, attribution: services.tiles.attribution },
+      omt: opts.tilesUrl
+        ? { type: "vector", url: opts.tilesUrl, attribution: "Offline pack · © OpenStreetMap" }
+        : { type: "vector", url: services.tiles.tilejson, attribution: services.tiles.attribution },
     },
     layers,
   };
