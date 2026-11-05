@@ -10,6 +10,9 @@ import { onLongPress } from "./longPress";
 import { reverse } from "../nav/geocode";
 import { translate } from "../i18n";
 import type { Route } from "../nav/valhalla";
+import { useDrive } from "../store/drive";
+import { FollowCamera } from "./followCamera";
+import { remainingShape } from "../modes/drive/session";
 type Map = maplibregl.Map;
 
 // MapLibre 6 looks for its worker next to its own module. In dev that works
@@ -54,6 +57,7 @@ export function MapView({ mode }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<Map | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
+  const camRef = useRef<FollowCamera | null>(null);
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const theme = useApp((s) => s.theme);
@@ -109,7 +113,29 @@ export function MapView({ mode }: Props) {
       box.append(name, detail, btn);
     });
 
-    return () => { offLong(); markers.current.forEach((mk) => mk.remove()); m.remove(); map.current = null; };
+    // ---- drive: follow camera, puck, trimmed route ----------------------
+    const cam = new FollowCamera(m);
+    camRef.current = cam;
+    // A user gesture (drag/rotate) pauses following until "Recenter".
+    const userMoved = (e: { originalEvent?: Event }) => { if (e.originalEvent && modeRef.current === "drive") useDrive.getState().set({ follow: false }); };
+    m.on("dragstart", userMoved);
+    m.on("rotatestart", userMoved);
+    let lastTrim = 0;
+    const unsub = useDrive.subscribe((s, prev) => {
+      if (s.fix === prev.fix && s.follow === prev.follow) return;
+      if (!s.fix) { cam.clear(); return; }
+      cam.update(s.fix, s.guidance, s.follow && modeRef.current === "drive");
+      // redraw only the part of the route still ahead, at most once a second
+      const now = performance.now();
+      if (modeRef.current === "drive" && s.guidance && now - lastTrim > 1000 && m.isStyleLoaded()) {
+        lastTrim = now;
+        const rest = remainingShape();
+        const r = usePlan.getState().active?.route;
+        if (rest && r && rest.length > 1) setRoutes(m, [{ ...r, shape: rest }], 0);
+      }
+    });
+
+    return () => { unsub(); offLong(); markers.current.forEach((mk) => mk.remove()); m.remove(); map.current = null; };
   }, []);
 
   // ---- theme --------------------------------------------------------------
@@ -163,12 +189,12 @@ export function MapView({ mode }: Props) {
     const m = map.current;
     if (!m) return;
     if (mode === "drive") {
-      const start = active?.route.shape[0];
+      const start = usePlan.getState().active?.route.shape[0];
       m.easeTo({ pitch: 55, zoom: 15.5, duration: 800, ...(start ? { center: start } : {}) });
     } else {
-      m.easeTo({ pitch: 0, bearing: 0, duration: 800 });
+      m.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 800 });
     }
-  }, [mode, active]);
+  }, [mode, active?.sessionId]);
 
   // MapLibre forces position:relative on its container, so size it via a wrapper.
   return (
