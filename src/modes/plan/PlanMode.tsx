@@ -2,10 +2,15 @@ import { useState } from "react";
 import logo from "../../assets/logo.svg";
 import { useT } from "../../i18n";
 import { usePlan } from "../../store/plan";
+import { useGigs } from "../../features/gigs/store";
 import { SearchBox } from "./SearchBox";
 import { StopList } from "./StopList";
 import { RouteOptionsPanel } from "./RouteOptionsPanel";
 import { Alternatives } from "./Alternatives";
+import { GigsPanel } from "./GigsPanel";
+import { VenuesPanel } from "./VenuesPanel";
+
+type Tab = "route" | "gigs" | "venues";
 
 /**
  * Plan mode — full UI. Desktop/iPad: side panel on the left.
@@ -15,8 +20,10 @@ import { Alternatives } from "./Alternatives";
 export function PlanMode() {
   const t = useT();
   const hasRoute = usePlan((s) => s.routes.length > 0);
+  const picking = useGigs((s) => s.picking);
   const [collapsed, setCollapsed] = useState(false);
-  const hide = collapsed && hasRoute ? "max-md:hidden" : "";
+  const [tab, setTab] = useState<Tab>("route");
+  const hide = collapsed && hasRoute && tab === "route" ? "max-md:hidden" : "";
 
   return (
     <div className="pointer-events-none absolute inset-x-4 top-[max(1rem,env(safe-area-inset-top))] bottom-24 flex flex-col gap-3 md:right-auto md:w-[420px]">
@@ -29,17 +36,39 @@ export function PlanMode() {
         </div>
       </header>
 
+      {picking && (
+        <div className="pointer-events-auto border border-fq-primary bg-fq-bg/95 px-4 py-2 text-[13px] text-fq-primary">
+          {picking.field === "loadInDoor" ? t("venue.pickDoorHint") : t("venue.pickParkingHint")}
+          <button onClick={() => useGigs.getState().finishPicking(null)} className="ml-3 text-fq-muted underline">{t("venue.cancel")}</button>
+        </div>
+      )}
+
       <section className="pointer-events-auto mt-auto flex max-h-[45vh] flex-col gap-4 overflow-auto border border-fq-line bg-fq-bg/95 p-4 backdrop-blur md:mt-0 md:max-h-none md:flex-1">
-        {hasRoute && (
-          <button onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}
-            className="-mb-2 -mt-2 h-8 text-[12px] text-fq-muted md:hidden">
-            {collapsed ? `▴ ${t("plan.showDetails")}` : `▾ ${t("plan.hideDetails")}`}
-          </button>
+        <div role="tablist" className="-mx-1 flex gap-1">
+          {(["route", "gigs", "venues"] as const).map((k) => (
+            <button key={k} role="tab" aria-selected={tab === k} aria-pressed={tab === k} onClick={() => setTab(k)}
+              className="fq-bracket h-10 flex-1 text-[12px] uppercase tracking-widest">
+              {t(`plan.tab.${k}`)}
+            </button>
+          ))}
+        </div>
+
+        {tab === "route" && (
+          <>
+            {hasRoute && (
+              <button onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}
+                className="-mb-2 -mt-2 h-8 text-[12px] text-fq-muted md:hidden">
+                {collapsed ? `▴ ${t("plan.showDetails")}` : `▾ ${t("plan.hideDetails")}`}
+              </button>
+            )}
+            <div className={hide}><SearchBox /></div>
+            <div className={hide}><StopList /></div>
+            <div className={hide}><RouteOptionsPanel /></div>
+            <Alternatives compact={collapsed} />
+          </>
         )}
-        <div className={hide}><SearchBox /></div>
-        <div className={hide}><StopList /></div>
-        <div className={hide}><RouteOptionsPanel /></div>
-        <Alternatives compact={collapsed} />
+        {tab === "gigs" && <GigsPanel onPlanned={() => setTab("route")} />}
+        {tab === "venues" && <VenuesPanel />}
       </section>
     </div>
   );

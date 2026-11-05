@@ -39,7 +39,7 @@ export function Alternatives({ compact = false }: { compact?: boolean }) {
           </button>
         );
       })}
-      <button onClick={startDrive}
+      <button onClick={() => startDrive()}
         className="fq-bracket mt-2 h-16 w-full bg-fq-primary text-base font-normal uppercase tracking-widest text-[#040404]! ">
         {t("plan.startDrive")}
       </button>

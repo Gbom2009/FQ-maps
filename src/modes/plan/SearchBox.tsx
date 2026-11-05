@@ -6,10 +6,12 @@ import { useT } from "../../i18n";
 
 const DEBOUNCE_MS = 400;
 
-export function SearchBox() {
+/** Address/venue search. Adds a stop by default; pass onPick to use it elsewhere (venue address). */
+export function SearchBox({ onPick, placeholder }: { onPick?: (p: Place) => void; placeholder?: string } = {}) {
   const t = useT();
   const lang = useApp((s) => s.lang);
   const addStop = usePlan((s) => s.addStop);
+  const choose = onPick ?? ((p: Place) => addStop(p));
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Place[]>([]);
   const [source, setSource] = useState<"pdok" | "photon" | "none">("none");
@@ -48,7 +50,7 @@ export function SearchBox() {
     finally { setBusy(false); }
   };
 
-  const pick = (p: Place) => { addStop(p); setQ(""); setResults([]); setOpen(false); };
+  const pick = (p: Place) => { choose(p); setQ(""); setResults([]); setOpen(false); };
 
   return (
     <div className="relative">
@@ -57,7 +59,7 @@ export function SearchBox() {
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         onKeyDown={(e) => { if (e.key === "Enter" && results[0]) pick(results[0]); if (e.key === "Escape") setOpen(false); }}
-        placeholder={t("plan.search")}
+        placeholder={placeholder ?? t("plan.search")}
         aria-label={t("plan.search")}
         className="h-12 w-full select-text border border-fq-line bg-fq-surface px-3 text-sm text-fq-strong placeholder:text-fq-muted"
       />
