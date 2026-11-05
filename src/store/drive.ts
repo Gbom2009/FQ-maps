@@ -27,6 +27,8 @@ export interface DriveState {
   /** upcoming tow hazard (sharp turn / narrow road / steep descent) */
   towWarning: import("../features/vehicles/towWarnings").TowWarning | null;
   limitsStatus: "none" | "loading" | "ok" | "error";
+  /** milieuzone ahead / EV-mode hint for the HUD */
+  zoneNotice: { kind: "zone" | "ev"; text: string; along: number } | null;
   follow: boolean;
   rerouting: boolean;
   rerouteError: string | null;
@@ -53,6 +55,7 @@ export const useDrive = create<DriveState>()(
       guidance: null,
       limitsStatus: "none",
       towWarning: null,
+      zoneNotice: null,
       follow: true,
       rerouting: false,
       rerouteError: null,

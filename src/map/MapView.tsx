@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { buildMapStyle } from "../theme/mapStyle";
@@ -15,6 +15,9 @@ import { FollowCamera } from "./followCamera";
 import { remainingShape } from "../modes/drive/session";
 import { useGigs } from "../features/gigs/store";
 import { setWaveformMode, startWaveform } from "./waveformRoute";
+import { attachPhevLayers } from "./phevLayers";
+import { bindHeatmap } from "./heatmap";
+import { openPack, useOffline, wantsPack } from "../features/offline/packs";
 type Map = maplibregl.Map;
 
 // MapLibre 6 looks for its worker next to its own module. In dev that works
@@ -177,17 +180,40 @@ export function MapView({ mode }: Props) {
     });
 
     const stopWave = startWaveform(m);
+    const detachPhev = attachPhevLayers(m);
+    bindHeatmap(m);
 
-    return () => { stopWave(); unsubGigs(); venueMarkers.forEach((x) => x.remove()); unsub(); offLong(); markers.current.forEach((mk) => mk.remove()); m.remove(); map.current = null; };
+    return () => { detachPhev(); stopWave(); unsubGigs(); venueMarkers.forEach((x) => x.remove()); unsub(); offLong(); markers.current.forEach((mk) => mk.remove()); m.remove(); map.current = null; };
   }, []);
 
-  // ---- theme --------------------------------------------------------------
-  const firstTheme = useRef(true);
+  // ---- theme + tile source (online / offline pack) --------------------------
+  const { mode: offlineMode, activePack } = useOffline();
+  const [online, setOnline] = useState(() => navigator.onLine);
   useEffect(() => {
-    if (firstTheme.current) { firstTheme.current = false; return; }
-    // diff:false → full reload, so "style.load" fires and our route layers get re-added
-    map.current?.setStyle(buildMapStyle(theme), { diff: false });
-  }, [theme]);
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+  const usePack = wantsPack(offlineMode, activePack, online);
+  const firstStyle = useRef(true);
+  const lastStyleKey = useRef("");
+  useEffect(() => {
+    const key = `${theme}|${usePack ? activePack : "online"}`;
+    if (firstStyle.current && !usePack) { firstStyle.current = false; lastStyleKey.current = key; return; }
+    firstStyle.current = false;
+    if (key === lastStyleKey.current) return;
+    lastStyleKey.current = key;
+    let cancelled = false;
+    (async () => {
+      let tilesUrl: string | undefined;
+      if (usePack && activePack) {
+        try { tilesUrl = await openPack(activePack); } catch (e) { console.warn("[offline]", e); }
+      }
+      // diff:false → full reload, so "style.load" fires and our route layers get re-added
+      if (!cancelled) map.current?.setStyle(buildMapStyle(theme, { tilesUrl }), { diff: false });
+    })();
+    return () => { cancelled = true; };
+  }, [theme, usePack, activePack]);
 
   // ---- routes -------------------------------------------------------------
   function syncRoutes(m: Map) {

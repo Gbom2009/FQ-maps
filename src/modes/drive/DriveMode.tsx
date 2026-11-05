@@ -30,7 +30,7 @@ export function DriveMode() {
   const setMode = useApp((s) => s.setMode);
   const active = usePlan((s) => s.active);
   const endDrive = usePlan((s) => s.endDrive);
-  const { fix, guidance: g, limitKmh, postedKmh, capKmh, towWarning, muted, follow, rerouting, rerouteError, arrived, gpsError, locked, source, devTools, set } = useDrive();
+  const { fix, guidance: g, limitKmh, postedKmh, capKmh, towWarning, zoneNotice, muted, follow, rerouting, rerouteError, arrived, gpsError, locked, source, devTools, set } = useDrive();
   const gig = useGigs((s) => s.gigs.find((x) => x.id === active?.gigId));
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const towing = !!active?.tow;
@@ -103,6 +103,11 @@ export function DriveMode() {
         {towWarning && !arrived && (
           <div className="mt-3 flex items-center gap-2 border border-fq-warn px-3 py-2 text-base text-fq-warn">
             ⚠ {towWarning.kind === "sharp" ? t("tow.warn.sharp") : towWarning.kind === "narrow" ? t("tow.warn.narrow") : `${t("tow.warn.descent")} ${towWarning.gradePct}%`}
+          </div>
+        )}
+        {zoneNotice && !arrived && (
+          <div className={`mt-3 flex items-center gap-2 border px-3 py-2 text-base ${zoneNotice.kind === "ev" ? "border-[#3ddc84] text-[#3ddc84]" : "border-fq-secondary text-fq-strong"}`}>
+            {zoneNotice.kind === "ev" ? "⚡" : "🌿"} {zoneNotice.text}
           </div>
         )}
         {rerouting && <div className="mt-2 text-sm text-fq-warn">{t("drive.rerouting")}</div>}

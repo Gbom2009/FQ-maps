@@ -14,8 +14,12 @@ import { towCapFor } from "../../features/vehicles/profiles";
 import type { TowProfile } from "../../features/vehicles/store";
 import { computeTowWarnings, fetchHeights, type TowWarning } from "../../features/vehicles/towWarnings";
 import { recordTrip } from "../../features/stats/tripLog";
+import { createDecimator, saveTrack } from "../../features/stats/tracks";
 import { activeVehicle } from "../../features/vehicles/store";
 import { haversine } from "../../nav/geo";
+import { evHints, loadZones, urbanStretches, zoneEntries, type EvHint, type ZoneEntry } from "../../features/phev/zones";
+import { usePhev } from "../../features/phev/store";
+import { spokenDistance } from "../../nav/voice";
 
 /**
  * Drive session controller (framework-free). Owns the location provider,
@@ -41,6 +45,12 @@ let tow: TowProfile | null = null;
 let heights: [number, number][] = [];
 let towWarnings: TowWarning[] = [];
 let warned = new Set<number>();
+let zones: ZoneEntry[] = [];
+let hints: EvHint[] = [];
+let zoneSaid = new Set<string>();
+/** announce zone entries / EV hints this far ahead */
+const ZONE_WARN_M = 1000;
+const EV_HINT_M = 600;
 /** announce tow warnings this far ahead */
 const TOW_WARN_M = 300;
 
@@ -73,7 +83,13 @@ function loadRoute(route: Route) {
   useDrive.getState().set({ limitsStatus: "loading", towWarning: null });
   const forSession = sessionId;
   const g = geo;
-  const refreshWarnings = () => { if (tow && geo === g) towWarnings = computeTowWarnings(g, limits, heights); };
+  zones = []; hints = []; zoneSaid = new Set();
+  const refreshHints = () => {
+    if (geo !== g) return;
+    hints = evHints(zones, urbanStretches(g, limits), activeVehicle()?.evRangeKm);
+  };
+  void loadZones().then((z) => { if (geo === g) { zones = zoneEntries(g, z); refreshHints(); } });
+  const refreshWarnings = () => { if (tow && geo === g) towWarnings = computeTowWarnings(g, limits, heights); refreshHints(); };
   fetchSpeedLimits(route.legs.map((l) => l.shape), decodePolyline, tow ? "truck" : "auto")
     .then((l) => { if (sessionId === forSession) { limits = l; refreshWarnings(); useDrive.getState().set({ limitsStatus: "ok" }); } })
     .catch(() => { if (sessionId === forSession) useDrive.getState().set({ limitsStatus: "error" }); });
@@ -82,6 +98,36 @@ function loadRoute(route: Route) {
       .then((h) => { if (sessionId === forSession) { heights = h; refreshWarnings(); } })
       .catch(() => { /* no elevation: descents just aren’t warned */ });
   }
+}
+
+/** Milieuzone entry alerts + "switch to EV mode" hints (PHEV). */
+function checkZones(g: GuidanceState) {
+  const p = usePhev.getState();
+  const d = useDrive.getState();
+  const lang = useApp.getState().lang;
+  let notice: { kind: "zone" | "ev"; text: string; along: number } | null = null;
+
+  if (p.zoneAlerts) {
+    const z = zones.find((e) => e.along > g.along - 30 && e.along - g.along <= ZONE_WARN_M);
+    if (z) {
+      const key = `z${z.along}`;
+      const dist = Math.max(0, z.along - g.along);
+      notice = { kind: "zone", along: z.along, text: `${z.zone.name}${dist > 50 ? ` · ${spokenDistance(dist, lang)}` : ""}` };
+      if (!zoneSaid.has(key) && z.along > 0) {
+        zoneSaid.add(key);
+        say(t("phev.voice.zone").replace("{zone}", z.zone.name).replace("{dist}", spokenDistance(Math.max(100, dist), lang)));
+      }
+    }
+  }
+  if (p.evHints && !notice) {
+    const h = hints.find((x) => x.along > g.along - 30 && x.along - g.along <= EV_HINT_M);
+    if (h) {
+      notice = { kind: "ev", along: h.along, text: t("phev.ev") };
+      const key = `e${h.along}`;
+      if (!zoneSaid.has(key)) { zoneSaid.add(key); say(t(h.kind === "zone" ? "phev.voice.evZone" : "phev.voice.evUrban")); }
+    }
+  }
+  if (notice?.text !== d.zoneNotice?.text) d.set({ zoneNotice: notice });
 }
 
 function checkTowWarnings(g: GuidanceState) {
@@ -106,23 +152,32 @@ function updateLock(f: Fix) {
 }
 
 // ---- trip log (Setlist, Phase 5 shows it): distance actually driven --------
-let trip: { startedAt: number; startAlong: number; km: number; last: [number, number] | null } | null = null;
+let trip: { startedAt: number; startAlong: number; km: number; last: [number, number] | null; lastT: number; track: ReturnType<typeof createDecimator> } | null = null;
 
 function trackTrip(f: Fix) {
   if (!trip || f.speedKmh < 2) return;
   const p: [number, number] = [f.lon, f.lat];
-  if (trip.last) trip.km += haversine(trip.last, p) / 1000;
+  if (trip.last) {
+    const m = haversine(trip.last, p);
+    const dt = Math.max(0.001, (f.t - trip.lastT) / 1000);
+    // ignore GPS jumps (tunnel exits, teleports) faster than 250 km/h
+    if (m / dt < 70) trip.km += m / 1000;
+  }
   trip.last = p;
+  trip.lastT = f.t;
+  trip.track.push(p);
 }
 
 function finishTrip(arrived: boolean) {
   const a = usePlan.getState().active;
   if (!trip || !a || trip.km < 0.2) { trip = null; return; }
-  recordTrip({
+  const id = recordTrip({
     startedAt: trip.startedAt, endedAt: Date.now(), km: Math.round(trip.km * 10) / 10,
     vehicle: a.tow?.vehicle.name ?? activeVehicle()?.name, trailer: a.tow?.trailer.name,
     gigId: a.gigId, destination: a.stops[a.stops.length - 1]?.name, arrived,
+    simulated: provider?.kind === "simulated",
   });
+  void saveTrack(id, trip.track.points());
   trip = null;
 }
 
@@ -139,6 +194,7 @@ function onFix(f: Fix) {
   const limitKmh = effectiveLimit(seg?.limitKmh, capKmh);
   d.set({ fix: f, guidance: g, limitKmh, postedKmh: seg?.limitKmh, capKmh, gpsError: null });
   checkTowWarnings(g);
+  checkZones(g);
 
   // voice
   if (g.next >= 0) {
@@ -212,7 +268,7 @@ export function start(active: ActiveRoute) {
   stop();
   sessionId = active.sessionId;
   tow = active.tow ?? null;
-  trip = { startedAt: Date.now(), startAlong: 0, km: 0, last: null };
+  trip = { startedAt: Date.now(), startAlong: 0, km: 0, last: null, lastT: 0, track: createDecimator(50) };
   const d = useDrive.getState();
   d.set({ guidance: null, arrived: false, reroutes: 0, rerouting: false, rerouteError: null, follow: true, simPaused: false });
   loadRoute(active.route);

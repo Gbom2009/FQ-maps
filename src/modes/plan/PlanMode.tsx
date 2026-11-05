@@ -9,8 +9,10 @@ import { RouteOptionsPanel } from "./RouteOptionsPanel";
 import { Alternatives } from "./Alternatives";
 import { GigsPanel } from "./GigsPanel";
 import { VenuesPanel } from "./VenuesPanel";
+import { SetlistPanel } from "./SetlistPanel";
+import { HandoffPanel } from "./HandoffPanel";
 
-type Tab = "route" | "gigs" | "venues";
+type Tab = "route" | "gigs" | "venues" | "setlist";
 
 /**
  * Plan mode — full UI. Desktop/iPad: side panel on the left.
@@ -45,9 +47,9 @@ export function PlanMode() {
 
       <section className="pointer-events-auto mt-auto flex max-h-[45vh] flex-col gap-4 overflow-auto border border-fq-line bg-fq-bg/95 p-4 backdrop-blur md:mt-0 md:max-h-none md:flex-1">
         <div role="tablist" className="-mx-1 flex gap-1">
-          {(["route", "gigs", "venues"] as const).map((k) => (
+          {(["route", "gigs", "venues", "setlist"] as const).map((k) => (
             <button key={k} role="tab" aria-selected={tab === k} aria-pressed={tab === k} onClick={() => setTab(k)}
-              className="fq-bracket h-10 flex-1 text-[12px] uppercase tracking-widest">
+              className="fq-bracket h-10 flex-1 text-[11px] uppercase tracking-wider">
               {t(`plan.tab.${k}`)}
             </button>
           ))}
@@ -65,10 +67,12 @@ export function PlanMode() {
             <div className={hide}><StopList /></div>
             <div className={hide}><RouteOptionsPanel /></div>
             <Alternatives compact={collapsed} />
+            <div className={hide}><HandoffPanel /></div>
           </>
         )}
         {tab === "gigs" && <GigsPanel onPlanned={() => setTab("route")} />}
         {tab === "venues" && <VenuesPanel />}
+        {tab === "setlist" && <SetlistPanel />}
       </section>
     </div>
   );
