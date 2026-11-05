@@ -37,20 +37,30 @@ body {
   outline-offset: 2px;
 }
 
-/* Corner-bracket button — the site's signature control. */
-.fq-bracket {
-  position: relative;
-  background: transparent;
-  color: var(--fq-text-strong);
-  border: 0;
-  cursor: pointer;
+@layer components {
+  /* Corner-bracket button — the site's signature control. */
+  .fq-bracket {
+    position: relative;
+    background: transparent;
+    color: var(--fq-text-strong);
+    border: 0;
+    cursor: pointer;
+  }
+  .fq-bracket::before, .fq-bracket::after {
+    content: ""; position: absolute; width: 12px; height: 12px;
+    border-color: currentColor; border-style: solid; pointer-events: none;
+  }
+  .fq-bracket::before { top: 0; left: 0; border-width: 1px 0 0 1px; }
+  .fq-bracket::after  { bottom: 0; right: 0; border-width: 0 1px 1px 0; }
+  .fq-bracket[aria-pressed="true"] { color: var(--fq-primary); }
 }
-.fq-bracket::before, .fq-bracket::after {
-  content: ""; position: absolute; width: 12px; height: 12px;
-  border-color: currentColor; border-style: solid; pointer-events: none;
-}
-.fq-bracket::before { top: 0; left: 0; border-width: 1px 0 0 1px; }
-.fq-bracket::after  { bottom: 0; right: 0; border-width: 0 1px 1px 0; }
-.fq-bracket[aria-pressed="true"] { color: var(--fq-primary); }
 
 .maplibregl-ctrl-attrib { font-family: var(--fq-font-body); font-size: 10px; }
+
+/* Map popups on brand */
+.fq-popup .maplibregl-popup-content {
+  background: var(--fq-bg); border: 1px solid var(--fq-line); border-radius: 0; padding: 14px; color: var(--fq-text);
+}
+.fq-popup .maplibregl-popup-close-button { color: var(--fq-muted); font-size: 18px; width: 28px; height: 28px; }
+.fq-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--fq-line); }
+.fq-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: var(--fq-line); }
