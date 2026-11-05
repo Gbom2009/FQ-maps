@@ -2,7 +2,7 @@ import { services } from "../config/services";
 import { createThrottle } from "./throttle";
 import { decodePolyline } from "./polyline";
 
-export interface LatLon { lat: number; lon: number }
+export interface LatLon { lat: number; lon: number; /** degrees; set on reroute start so Valhalla routes in driving direction */ heading?: number }
 
 export interface RouteOptions {
   avoidMotorways: boolean;
@@ -19,6 +19,7 @@ export interface Maneuver {
   type: number;
   instruction: string;
   /** Spoken versions, used by voice in Phase 3. */
+  verbalAlert?: string;
   verbalPre?: string;
   verbalPost?: string;
   streetNames: string[];
@@ -27,6 +28,8 @@ export interface Maneuver {
   timeS: number;
   beginShapeIndex: number;
   endShapeIndex: number;
+  roundaboutExit?: number;
+  highway?: boolean;
 }
 
 export interface RouteLeg {
@@ -66,7 +69,10 @@ export function buildRouteBody(req: RouteRequest) {
   const o = req.options;
   const body: Record<string, unknown> = {
     // every stop is a real stop ("break") with its own leg, not a pass-through
-    locations: req.stops.map((s) => ({ lat: s.lat, lon: s.lon, type: "break" })),
+    locations: req.stops.map((s) => ({
+      lat: s.lat, lon: s.lon, type: "break",
+      ...(s.heading !== undefined ? { heading: Math.round(s.heading), heading_tolerance: 45 } : {}),
+    })),
     costing,
     costing_options: {
       [costing]: {
@@ -89,6 +95,7 @@ interface VTrip {
     min_lat: number; min_lon: number; max_lat: number; max_lon: number };
   legs: { shape: string; summary: { time: number; length: number };
     maneuvers: { type: number; instruction: string; verbal_pre_transition_instruction?: string;
+      verbal_transition_alert_instruction?: string; roundabout_exit_count?: number; highway?: boolean;
       verbal_post_transition_instruction?: string; street_names?: string[]; length: number; time: number;
       begin_shape_index: number; end_shape_index: number }[] }[];
 }
@@ -101,7 +108,10 @@ export function parseTrip(trip: VTrip, id: string): Route {
     maneuvers: l.maneuvers.map((m) => ({
       type: m.type,
       instruction: m.instruction,
+      verbalAlert: m.verbal_transition_alert_instruction,
       verbalPre: m.verbal_pre_transition_instruction,
+      roundaboutExit: m.roundabout_exit_count,
+      highway: m.highway,
       verbalPost: m.verbal_post_transition_instruction,
       streetNames: m.street_names ?? [],
       lengthM: m.length * 1000,
