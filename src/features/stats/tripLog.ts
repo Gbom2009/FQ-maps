@@ -12,6 +12,8 @@ export interface Trip {
   gigId?: string;
   destination?: string;
   arrived: boolean;
+  /** driven with the simulator — excluded from season stats by default */
+  simulated?: boolean;
 }
 
 interface TripState {
@@ -25,12 +27,14 @@ export const useTrips = create<TripState>()(
     (set, get) => ({
       trips: [],
       add: (t) => set({ trips: [t, ...get().trips].slice(0, 2000) }),
-      remove: (id) => set({ trips: get().trips.filter((t) => t.id !== id) }),
+      remove: (id) => { set({ trips: get().trips.filter((t) => t.id !== id) }); void import("./tracks").then((m) => m.deleteTrack(id)); },
     }),
     { name: "fq-trips" },
   ),
 );
 
-export function recordTrip(t: Omit<Trip, "id">) {
-  useTrips.getState().add({ ...t, id: `trip-${t.startedAt.toString(36)}` });
+export function recordTrip(t: Omit<Trip, "id">): string {
+  const id = `trip-${t.startedAt.toString(36)}`;
+  useTrips.getState().add({ ...t, id });
+  return id;
 }
