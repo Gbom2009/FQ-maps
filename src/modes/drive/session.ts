@@ -62,6 +62,7 @@ const EV_HINT_M = 600;
 let features: RoadFeature[] = [];
 let events: NarrationEvent[] = [];
 let spokenEv = new Set<string>();
+let evCursor = 0;
 let preparedEv = new Set<string>();
 
 function narrationVehicle() {
@@ -76,6 +77,7 @@ function refreshNarration() {
   if (!geo) return;
   useDrive.getState().set({ detailVersion: useDrive.getState().detailVersion + 1 });
   const nv = narrationVehicle();
+  evCursor = 0;
   events = buildEvents({
     g: geo, limits, features, zones, vehicle: nv.v, vehicleLabel: nv.label,
     heightM: nv.heightM, weightT: nv.weightT, on: enabledTopics(), lang: useApp.getState().lang,
@@ -90,7 +92,10 @@ function checkNarration(g: GuidanceState, f: Fix) {
   const scale = useGuidance.getState().leadScale * Math.max(1, f.speedKmh / 80);
   const lang = useApp.getState().lang;
   let notice: { topic: string; dist: number; text: string } | null = null;
-  for (const e of events) {
+  // events are sorted by position: skip everything already behind us
+  while (evCursor < events.length && events[evCursor].along < g.along - 10) evCursor++;
+  for (let k = evCursor; k < events.length; k++) {
+    const e = events[k];
     const dist = e.along - g.along;
     if (dist < -10) continue;
     if (dist > 2500) break;
@@ -151,6 +156,33 @@ function say(text: string, kind: "turn" | "critical" | "info" = "turn", prio = 3
 }
 const t = (k: Parameters<typeof translate>[1]) => translate(useApp.getState().lang, k);
 
+/**
+ * Simulator speed profile for the route:
+ * - planned: Valhalla's average speed per maneuver (includes junction delays)
+ * - limit: exactly the posted limit of each edge (planned where unknown)
+ * - fixed: one constant speed
+ */
+export function simSpeeds(g: RouteGeometry, mode: "planned" | "limit" | "fixed", fixedKmh: number, lim: LimitSegment[]): number[] {
+  const n = Math.max(0, g.shape.length - 1);
+  if (mode === "fixed") return new Array<number>(n).fill(fixedKmh / 3.6);
+  const planned = simPathFromRoute(g).speeds!;
+  if (mode === "planned" || !lim.length) return planned;
+  const out = planned.slice();
+  for (const sg of lim) {
+    if (sg.limitKmh === undefined) continue;
+    for (let k = sg.from; k < Math.min(sg.to, n); k++) out[k] = sg.limitKmh / 3.6;
+  }
+  return out;
+}
+
+/** Apply the current speed settings to the running simulator. */
+export function applySimSpeeds() {
+  if (!sim || !geo) return;
+  const d = useDrive.getState();
+  sim.brake = d.simBrake;
+  sim.setSpeeds(simSpeeds(geo, d.simSpeedMode, d.simFixedKmh, limits), simPathFromRoute(geo).slowAt);
+}
+
 export function simPathFromRoute(g: RouteGeometry): SimPath {
   const speeds = new Array<number>(Math.max(0, g.shape.length - 1)).fill(50 / 3.6);
   g.maneuvers.forEach((m, i) => {
@@ -190,7 +222,7 @@ function loadRoute(route: Route) {
   void loadZones().then((z) => { if (geo === g) { zones = zoneEntries(g, z); refreshHints(); refreshNarration(); } });
   const refreshWarnings = () => { if (tow && geo === g) towWarnings = computeTowWarnings(g, limits, heights); refreshHints(); refreshNarration(); };
   fetchSpeedLimits(route.legs.map((l) => l.shape), decodePolyline, tow ? "truck" : "auto")
-    .then((l) => { if (sessionId === forSession) { limits = l; refreshWarnings(); useDrive.getState().set({ limitsStatus: "ok" }); } })
+    .then((l) => { if (sessionId === forSession) { limits = l; refreshWarnings(); applySimSpeeds(); useDrive.getState().set({ limitsStatus: "ok" }); } })
     .catch(() => { if (sessionId === forSession) useDrive.getState().set({ limitsStatus: "error" }); });
   if (tow) {
     fetchHeights(route.shape)
@@ -302,7 +334,7 @@ function onFix(f: Fix) {
     const finalStop = m.leg === geo.legEnds.length - 1 && DESTINATION_TYPES.has(m.type);
     // pre-render this maneuver’s prompts once it becomes "next" (Piper: zero delay later)
     const on = enabledTopics();
-    const ctx = limits.length ? turnContext(m, limits) : undefined;
+    const ctx = limits.length ? turnContext(m, limits, features) : undefined;
     const after = geo.maneuvers[g.next + 1];
     if (g.next !== preparedFor) {
       preparedFor = g.next;
@@ -364,6 +396,7 @@ async function reroute(f: Fix, g: GuidanceState | null, skipNextStop = false) {
     usePlan.getState().setActiveRoute(route, [here, ...remaining]);
     loadRoute(route);
     sim?.setPath(simPathFromRoute(geo!), { fromPosition: [f.lon, f.lat] });
+    applySimSpeeds();
     d.set({ rerouting: false, reroutes: d.reroutes + 1 });
     const first = geo!.maneuvers.find((m) => m.along > 5);
     if (first && !skipNextStop) say(first.verbalPre ?? first.instruction);
@@ -387,7 +420,7 @@ export function start(active: ActiveRoute) {
   warmUpVoice(useApp.getState().lang);
   loadRoute(active.route);
   ensureProvider();
-  if (sim) sim.setPath(simPathFromRoute(geo!));
+  if (sim) { sim.setPath(simPathFromRoute(geo!)); applySimSpeeds(); }
   const first = geo!.maneuvers[0];
   if (first) say(first.verbalPre ?? first.instruction);
 }

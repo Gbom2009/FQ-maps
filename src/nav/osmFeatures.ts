@@ -26,6 +26,8 @@ export interface RoadFeature {
   value?: number;
   /** crossing: "zebra" | "traffic_signals" | "uncontrolled" | … */
   detail?: string;
+  /** distance from the route line, m — signs ≈ 0 are on our approach, ~10–25 m on a side road */
+  offsetM?: number;
 }
 
 // Several public Overpass instances; the main one is often at capacity (and was
@@ -137,7 +139,7 @@ export function snapFeatures(els: OsmEl[], g: RouteGeometry, maxOffM = 25): Road
     const id = `${el.type}/${el.id}`;
     if (seen.has(id)) continue;
     seen.add(id);
-    out.push({ id, ...c, lat, lon, along: p.along });
+    out.push({ id, ...c, lat, lon, along: p.along, offsetM: Math.round(p.offset * 10) / 10 });
   }
   return out.sort((a, b) => a.along - b.along);
 }

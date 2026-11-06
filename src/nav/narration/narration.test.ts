@@ -222,3 +222,48 @@ describe("Dutch phrasing", () => {
     expect(polishNl("Bij de verkeerslichten, links afslaan en Kerkstraat ingaan. En daarna direct rechts afslaan.")).toBe("Bij de verkeerslichten, linksaf, de Kerkstraat in. En daarna direct rechtsaf.");
   });
 });
+
+import { junctionPriority } from "./events";
+describe("priority at junctions (NL)", () => {
+  const sign = (id: string, kind: "giveway" | "stop", along: number, offsetM: number) => ({ id, kind, lat: 0, lon: 0, along, offsetM });
+  const seg: LimitSegment = { from: 0, to: 10, roadClass: "residential", arms: [{ heading: 0, use: "road", roadClass: "residential" }] };
+  it("a sign on our approach means we give way", () => {
+    expect(junctionPriority(1000, [sign("a", "giveway", 990, 2)], seg)).toBe("give");
+  });
+  it("signs on the side road mean we have priority", () => {
+    expect(junctionPriority(1000, [sign("b", "giveway", 1002, 14)], seg)).toBe("have");
+  });
+  it("no signs on two minor roads = equal junction; lights win over everything", () => {
+    expect(junctionPriority(1000, [], seg)).toBe("equal");
+    expect(junctionPriority(1000, [sign("c", "giveway", 990, 2)], { ...seg, signal: true })).toBe("lights");
+  });
+  it("only announces priority when it changes, and only our own signs", () => {
+    const shape2 = Array.from({ length: 61 }, (_, i) => destination(A, 90, i * 100));
+    const r2 = { ...route, shape: shape2, legs: [{ ...route.legs[0], shape: shape2, maneuvers: [man(1, 0), man(4, 60)] as never }] };
+    const g2 = buildGeometry(r2);
+    const junction = (i: number): LimitSegment => ({ from: i - 5, to: i, roadClass: "residential", arms: [{ heading: 0, use: "road", roadClass: "residential" }] });
+    const limits = [10, 15, 20, 25, 30, 35].map(junction);
+    // side-road signs at the first three junctions (we have priority), nothing at the last three (equal)
+    const feats = [1000, 1500, 2000].map((a, i) => sign(`s${i}`, "giveway", a + 3, 15));
+    const ev = buildEvents({ g: g2, limits, features: feats, zones: [], vehicleLabel: "auto", on: all, lang: "nl" });
+    const pr = ev.filter((e) => e.topic === "priority").map((e) => e.text(0));
+    expect(pr).toEqual([
+      "Je rijdt nu op een voorrangsweg: op de kruisingen hier heb jij voorrang.",
+      "Hier zijn de kruisingen gelijkwaardig: verkeer van rechts gaat voor.",
+    ]);
+    // side-road give-way signs are NOT announced as "verleen voorrang"
+    expect(ev.some((e) => e.topic === "stopSign")).toBe(false);
+  });
+});
+
+import { simSpeeds } from "../../modes/drive/session";
+describe("simulator speed modes", () => {
+  const limits: LimitSegment[] = [{ from: 0, to: 10, limitKmh: 30 }, { from: 10, to: 30, limitKmh: 80 }];
+  it("fixed, limit and planned", () => {
+    expect(simSpeeds(g, "fixed", 72, limits).every((v) => Math.abs(v - 20) < 1e-9)).toBe(true);
+    const lim = simSpeeds(g, "limit", 0, limits);
+    expect(Math.round(lim[5] * 3.6)).toBe(30);
+    expect(Math.round(lim[20] * 3.6)).toBe(80);
+    expect(simSpeeds(g, "planned", 0, limits)).toHaveLength(30);
+  });
+});

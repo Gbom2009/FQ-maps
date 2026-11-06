@@ -68,7 +68,8 @@ export function richInstruction(
       else if (ctx.cycleOnNext) extra.push(nl ? `${ctx.nextStreet ? `De ${ctx.nextStreet}` : "Die weg"} heeft een fietsstrook.` : "That road has a cycle lane.");
     }
     if (on("oneway") && ctx.onewayNext) extra.push(nl ? "Dat is een eenrichtingsweg." : "That's a one-way street.");
-    if (on("priority") && ctx.unsignalledMinor && TURNS.has(m.type) && stage === "now") extra.push(nl ? "Geen verkeerslichten: let op verkeer van rechts." : "No traffic lights: watch traffic from the right.");
+    // only say it when YOU must give way — having priority needs no comment at every turn
+    if ((on("priority") || on("stopSign")) && ctx.priority === "give" && stage === "now") extra.push(nl ? "Verleen voorrang." : "Give way.");
   }
   // chain a maneuver that follows right after
   if (next && stage !== "far" && next.along - m.along < 150 && !DESTINATION_TYPES.has(next.type)) {

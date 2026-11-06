@@ -51,6 +51,29 @@ export function segStartingAt(limits: LimitSegment[], i: number): LimitSegment |
   return limits.find((s) => s.from === i) ?? limits.find((s) => s.from <= i && s.to > i);
 }
 
+/** A give-way/stop sign this close to our line is on our approach; further out it's on a side road. */
+export const SIGN_ON_ROUTE_M = 7;
+const isSign = (f: RoadFeature) => f.kind === "giveway" || f.kind === "stop";
+const ours = (f: RoadFeature) => (f.offsetM ?? 0) <= SIGN_ON_ROUTE_M;
+
+export type Priority = "give" | "have" | "equal" | "lights" | "unknown";
+
+/**
+ * Who has priority at the junction at `along` (NL rules):
+ * - a give-way/stop sign on our approach (just before the junction) → we give way
+ * - signs only on the side roads → we have priority
+ * - traffic lights → lights decide
+ * - two minor roads, no signs at all → equal junction: traffic from the right goes first
+ */
+export function junctionPriority(along: number, features: RoadFeature[], seg?: LimitSegment): Priority {
+  if (seg?.signal) return "lights";
+  const near = features.filter((f) => isSign(f) && f.along > along - 45 && f.along < along + 12);
+  if (near.some((f) => ours(f) && f.along <= along + 3)) return "give";
+  if (near.some((f) => !ours(f) && Math.abs(f.along - along) < 30)) return "have";
+  if (seg && MINOR.has(seg.roadClass ?? "") && roadArms(seg.arms).some((a) => MINOR.has(a.roadClass ?? ""))) return "equal";
+  return "unknown";
+}
+
 export const roadArms = (arms?: Arm[]) => (arms ?? []).filter((a) => ROAD_USES.has(a.use as never));
 export const bikeArms = (arms?: Arm[]) => (arms ?? []).filter((a) => a.use === "cycleway" || a.use === "path");
 
@@ -65,7 +88,8 @@ const P = {
     stop: (d: string) => `Stopbord over ${d}. Helemaal stoppen en voorrang verlenen.`,
     giveway: (d: string) => `Haaientanden over ${d}. Verleen voorrang.`,
     lights: (d: string) => `Kruispunt met verkeerslichten over ${d}. Je gaat rechtdoor.`,
-    priority: (d: string) => `Kruispunt zonder verkeerslichten over ${d}. Let op verkeer van rechts.`,
+    havePriority: () => `Je rijdt nu op een voorrangsweg: op de kruisingen hier heb jij voorrang.`,
+    equalJunctions: () => `Hier zijn de kruisingen gelijkwaardig: verkeer van rechts gaat voor.`,
     tunnel: (d: string) => `Over ${d} rij je een tunnel in.`,
     bridge: (d: string) => `Over ${d} rij je over een brug.`,
     toll: (d: string) => `Let op: over ${d} begint een tolweg.`,
@@ -90,7 +114,8 @@ const P = {
     stop: (d: string) => `Stop sign in ${d}.`,
     giveway: (d: string) => `Give way in ${d}.`,
     lights: (d: string) => `Junction with traffic lights in ${d}. Go straight on.`,
-    priority: (d: string) => `Junction without traffic lights in ${d}. Watch for traffic from the right.`,
+    havePriority: () => `You're on a priority road now: you have right of way at these junctions.`,
+    equalJunctions: () => `Equal junctions here: traffic from the right goes first.`,
     tunnel: (d: string) => `Tunnel in ${d}.`,
     bridge: (d: string) => `Bridge in ${d}.`,
     toll: (d: string) => `Toll road begins in ${d}.`,
@@ -142,8 +167,8 @@ export function buildEvents(inp: NarrationInput): NarrationEvent[] {
       case "bump":
         if (on("bump") && f.along - lastBump > 150) { lastBump = f.along; ev.push({ id: `b-${f.id}`, along: f.along, lead: 100, prio: 4, topic: "bump", text: (m) => p.bump(d(m)) }); }
         break;
-      case "stop": if (on("stopSign")) ev.push({ id: `s-${f.id}`, along: f.along, lead: 120, prio: 2, topic: "stopSign", text: (m) => p.stop(d(m)) }); break;
-      case "giveway": if (on("stopSign")) ev.push({ id: `g-${f.id}`, along: f.along, lead: 120, prio: 3, topic: "stopSign", text: (m) => p.giveway(d(m)) }); break;
+      case "stop": if (on("stopSign") && ours(f)) ev.push({ id: `s-${f.id}`, along: f.along, lead: 120, prio: 2, topic: "stopSign", text: (m) => p.stop(d(m)) }); break;
+      case "giveway": if (on("stopSign") && ours(f)) ev.push({ id: `g-${f.id}`, along: f.along, lead: 120, prio: 3, topic: "stopSign", text: (m) => p.giveway(d(m)) }); break;
     }
   }
 
@@ -169,7 +194,9 @@ export function buildEvents(inp: NarrationInput): NarrationEvent[] {
   let prevCycle = false;
   let prevLanes: number | undefined;
   let lastLanesAt = -1e9;
-  let lastPriorityAt = -1e9;
+  // priority is announced only when it changes (on a priority road → equal junctions → …)
+  let prioState: Priority = "unknown";
+  let lastEqualAt = -1e9;
   for (let k = 0; k < limits.length; k++) {
     const s = limits[k];
     const start = at(s.from), end = at(s.to);
@@ -203,17 +230,23 @@ export function buildEvents(inp: NarrationInput): NarrationEvent[] {
     }
     if (s.lanes) prevLanes = s.lanes;
 
-    // junction at the end of this edge, when we go straight through (turns handle their own)
-    if (!nearManeuver(end)) {
-      const arms = roadArms(s.arms);
-      if (arms.length && s.signal && on("lights")) {
+    // junction at the end of this edge
+    const arms = roadArms(s.arms);
+    if (arms.length) {
+      const pr = junctionPriority(end, features, s);
+      if (pr === "lights" && !nearManeuver(end) && on("lights")) {
         ev.push({ id: `li-${k}`, along: end, lead: 200, prio: 4, topic: "lights", text: (m) => p.lights(d(m)) });
-      } else if (arms.length && !s.signal && MINOR.has(s.roadClass ?? "") && arms.some((a) => MINOR.has(a.roadClass ?? ""))
-        && on("priority") && end - lastPriorityAt > 150
-        && !features.some((f) => (f.kind === "giveway" || f.kind === "stop") && Math.abs(f.along - end) < 25)) {
-        lastPriorityAt = end;
-        ev.push({ id: `pr-${k}`, along: end, lead: 80, prio: 3, topic: "priority", text: (m) => p.priority(d(m)) });
       }
+      if (on("priority") && pr !== "unknown" && pr !== "lights" && pr !== prioState) {
+        if (pr === "have") {
+          ev.push({ id: `pv-${k}`, along: end, lead: 150, prio: 4, topic: "priority", text: () => p.havePriority() });
+        } else if (pr === "equal" && end - lastEqualAt > 1500) {
+          lastEqualAt = end;
+          ev.push({ id: `pe-${k}`, along: end, lead: 120, prio: 4, topic: "priority", text: () => p.equalJunctions() });
+        }
+        // "give" is announced by the sign itself (stopSign topic) and in the turn instruction
+      }
+      if (pr !== "unknown" && pr !== "lights") prioState = pr;
     }
   }
   return ev.sort((a, b) => a.along - b.along);
@@ -229,11 +262,12 @@ export interface TurnContext {
   onewayNext: boolean;
   /** roundabout: number of arms (incl. entry) when known */
   roundaboutArms?: number;
-  unsignalledMinor: boolean;
+  /** who has priority at the junction we turn at */
+  priority: Priority;
   nextStreet?: string;
 }
 
-export function turnContext(m: FlatManeuver, limits: LimitSegment[]): TurnContext {
+export function turnContext(m: FlatManeuver, limits: LimitSegment[], features: RoadFeature[] = []): TurnContext {
   const before = segEndingAt(limits, m.globalIndex);
   const after = segStartingAt(limits, m.globalIndex);
   const arms = before?.arms;
@@ -250,7 +284,7 @@ export function turnContext(m: FlatManeuver, limits: LimitSegment[]): TurnContex
     cycleOnNext: after?.cycleLane === "shared" || after?.cycleLane === "dedicated",
     onewayNext: !!after?.oneway && MINOR.has(after?.roadClass ?? ""),
     roundaboutArms,
-    unsignalledMinor: !before?.signal && MINOR.has(before?.roadClass ?? "") && roadArms(arms).length > 0,
+    priority: roadArms(arms).length ? junctionPriority(m.along, features, before) : "unknown",
     nextStreet: after?.names?.[0],
   };
 }
