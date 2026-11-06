@@ -6,11 +6,39 @@ import type { LonLat } from "./geo";
  * Speed limits along a route, from Valhalla trace_attributes (OSM maxspeed).
  * One request per route; segments are indexed by route shape vertex.
  */
+/** An arm leaving a junction (from Valhalla intersecting_edges). */
+export interface Arm { heading: number; use?: string; roadClass?: string; sameName?: boolean }
+
+/**
+ * Everything Valhalla knows about one stretch of the route (an OSM edge):
+ * limits, road type, cycle lane, one-way, roundabout, bridge/tunnel, the
+ * junction at its end (traffic light, crossing arms) and the country.
+ */
 export interface LimitSegment {
   from: number; // shape index
   to: number;
   limitKmh?: number;
   roadClass?: string;
+  use?: string;
+  names?: string[];
+  /** "none" | "shared" | "dedicated" | "separated" */
+  cycleLane?: string;
+  sidewalk?: string;
+  /** only drivable in our direction */
+  oneway?: boolean;
+  lanes?: number;
+  roundabout?: boolean;
+  bridge?: boolean;
+  tunnel?: boolean;
+  toll?: boolean;
+  surface?: string;
+  /** traffic light at the end of this edge */
+  signal?: boolean;
+  endNodeType?: string;
+  arms?: Arm[];
+  country?: string;
+  beginHeading?: number;
+  endHeading?: number;
 }
 
 const queue = createThrottle(1000);
@@ -33,7 +61,13 @@ export function encodePolyline(points: LonLat[], precision = 6): string {
   return out;
 }
 
-interface TraceEdge { speed_limit?: number; road_class?: string; begin_shape_index: number; end_shape_index: number }
+interface TraceEdge {
+  speed_limit?: number; road_class?: string; begin_shape_index: number; end_shape_index: number;
+  use?: string; names?: string[]; cycle_lane?: string; sidewalk?: string; traversability?: string; lane_count?: number;
+  roundabout?: boolean; bridge?: boolean; tunnel?: boolean; toll?: boolean; surface?: string; traffic_signal?: boolean;
+  begin_heading?: number; end_heading?: number; admin_index?: number;
+  end_node?: { type?: string; traffic_signal?: boolean; intersecting_edges?: { begin_heading: number; use?: string; road_class?: string; from_edge_name_consistency?: boolean }[] };
+}
 
 async function trace(shape: LonLat[], match: "edge_walk" | "walk_or_snap", costing: string) {
   const body = {
@@ -41,7 +75,14 @@ async function trace(shape: LonLat[], match: "edge_walk" | "walk_or_snap", costi
     shape_match: match,
     costing,
     filters: {
-      attributes: ["edge.speed_limit", "edge.road_class", "edge.begin_shape_index", "edge.end_shape_index", "shape"],
+      attributes: [
+        "edge.speed_limit", "edge.road_class", "edge.begin_shape_index", "edge.end_shape_index", "shape",
+        "edge.use", "edge.names", "edge.cycle_lane", "edge.sidewalk", "edge.traversability", "edge.lane_count",
+        "edge.roundabout", "edge.bridge", "edge.tunnel", "edge.toll", "edge.surface", "edge.traffic_signal",
+        "edge.begin_heading", "edge.end_heading", "edge.admin_index", "admin.country_code",
+        "node.type", "node.traffic_signal", "node.intersecting_edge.begin_heading", "node.intersecting_edge.use",
+        "node.intersecting_edge.road_class", "node.intersecting_edge.from_edge_name_consistency",
+      ],
       action: "include",
     },
   };
@@ -49,7 +90,7 @@ async function trace(shape: LonLat[], match: "edge_walk" | "walk_or_snap", costi
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }));
   if (!r.ok) throw new Error(`trace_attributes ${r.status}`);
-  return r.json() as Promise<{ edges: TraceEdge[]; shape?: string }>;
+  return r.json() as Promise<{ edges: TraceEdge[]; shape?: string; admins?: { country_code?: string }[] }>;
 }
 
 /** Index of the input vertex nearest to p (for remapping map-matched indices). */
@@ -64,18 +105,38 @@ function nearestIndex(shape: LonLat[], p: LonLat, from: number): number {
 
 /** Speed limits for one leg; indices relative to the leg's shape. */
 async function legLimits(shape: LonLat[], costing: string, decode: (s: string) => LonLat[]): Promise<LimitSegment[]> {
+  let admins: { country_code?: string }[] = [];
   const toSeg = (e: TraceEdge, from: number, to: number): LimitSegment => ({
     from, to,
     // Valhalla reports 0 or 255 for "unknown/none"
     limitKmh: e.speed_limit && e.speed_limit < 200 ? e.speed_limit : undefined,
     roadClass: e.road_class,
+    use: e.use,
+    names: e.names,
+    cycleLane: e.cycle_lane,
+    sidewalk: e.sidewalk,
+    oneway: e.traversability === "forward",
+    lanes: e.lane_count,
+    roundabout: e.roundabout,
+    bridge: e.bridge,
+    tunnel: e.tunnel,
+    toll: e.toll,
+    surface: e.surface,
+    signal: !!(e.end_node?.traffic_signal || e.traffic_signal),
+    endNodeType: e.end_node?.type,
+    arms: e.end_node?.intersecting_edges?.map((x) => ({ heading: x.begin_heading, use: x.use, roadClass: x.road_class, sameName: x.from_edge_name_consistency })),
+    country: e.admin_index !== undefined ? admins[e.admin_index]?.country_code : undefined,
+    beginHeading: e.begin_heading,
+    endHeading: e.end_heading,
   });
   try {
     const j = await trace(shape, "edge_walk", costing);
+    admins = j.admins ?? [];
     return j.edges.map((e) => toSeg(e, e.begin_shape_index, e.end_shape_index));
   } catch {
     // Exact match failed: map-match, then map its shape indices back onto ours.
     const j = await trace(shape, "walk_or_snap", costing);
+    admins = j.admins ?? [];
     const matched = j.shape ? decode(j.shape) : [];
     let cursor = 0;
     return j.edges.map((e) => {
