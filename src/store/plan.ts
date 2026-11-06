@@ -4,13 +4,22 @@ import type { Place } from "../nav/geocode";
 import { DEFAULT_OPTIONS, getRoutes, type Route, type RouteOptions } from "../nav/valhalla";
 import { useApp } from "./app";
 import { unlockAudio } from "../nav/tts/piper";
-import { currentTow, useVehicles, type TowProfile } from "../features/vehicles/store";
+import { activeVehicle, currentTow, useVehicles, type TowProfile } from "../features/vehicles/store";
+import { autoCosting } from "../features/vehicles/apply";
 import type { TowRouting } from "../nav/valhalla";
 
 /** Valhalla truck parameters for the attached trailer, or undefined without one. */
 export function towRouting(t: TowProfile | null): TowRouting | undefined {
   if (!t) return undefined;
-  return { ...t.dims, topSpeedKmh: t.caps.motorway };
+  // a slower cruise preference of the car still applies when towing
+  const cruise = t.vehicle.cruiseKmh;
+  return { ...t.dims, topSpeedKmh: cruise ? Math.min(cruise, t.caps.motorway) : t.caps.motorway };
+}
+
+/** Car-specific routing options when no trailer is attached. */
+export function vehicleRouting(): Record<string, number> | undefined {
+  const v = activeVehicle();
+  return v ? autoCosting(v) : undefined;
 }
 
 export interface Stop extends Place { key: string }
@@ -97,7 +106,7 @@ export const usePlan = create<PlanState>()(
         set({ loading: true, error: null });
         try {
           const routes = await getRoutes(
-            { stops, options, alternates: 2, language: useApp.getState().lang, tow: towRouting(currentTow()) },
+            { stops, options, alternates: 2, language: useApp.getState().lang, tow: towRouting(currentTow()), vehicle: vehicleRouting() },
             ctrl.signal,
           );
           if (ctrl.signal.aborted) return;
@@ -131,10 +140,12 @@ export const usePlan = create<PlanState>()(
   ),
 );
 
-// Re-route the plan when the vehicle/trailer selection or their specs change.
+// Re-route when the car/trailer selection or their specs change (debounced: typing in specs).
+let vehTimer: ReturnType<typeof setTimeout> | null = null;
 useVehicles.subscribe((s, prev) => {
-  if (s.activeTrailerId !== prev.activeTrailerId || s.activeVehicleId !== prev.activeVehicleId
-    || (s.activeTrailerId && (s.trailers !== prev.trailers || s.vehicles !== prev.vehicles || s.towCaps !== prev.towCaps))) {
-    void usePlan.getState().compute();
-  }
+  const car = (st: typeof s) => st.vehicles.find((v) => v.id === st.activeVehicleId);
+  const trl = (st: typeof s) => st.trailers.find((t) => t.id === st.activeTrailerId);
+  if (car(s) === car(prev) && trl(s) === trl(prev) && s.towCaps === prev.towCaps) return;
+  if (vehTimer) clearTimeout(vehTimer);
+  vehTimer = setTimeout(() => { if (usePlan.getState().stops.length >= 2) void usePlan.getState().compute(); }, 800);
 });

@@ -30,6 +30,12 @@ export interface Maneuver {
   endShapeIndex: number;
   roundaboutExit?: number;
   highway?: boolean;
+  /** short form, for chaining: "Rechts afslaan." */
+  verbalSuccinct?: string;
+  /** motorway sign: exit number, toward, branch */
+  sign?: { exitNumber?: string; toward?: string; branch?: string; name?: string };
+  bearingBefore?: number;
+  bearingAfter?: number;
 }
 
 export interface RouteLeg {
@@ -63,6 +69,8 @@ export interface RouteRequest {
   language?: "nl" | "en";
   /** Trailer attached → `truck` costing with the combined dimensions. */
   tow?: TowRouting;
+  /** Car without trailer: extra `auto` costing options (height, width, top_speed). */
+  vehicle?: Record<string, number>;
 }
 
 export interface TowRouting {
@@ -95,7 +103,7 @@ export function buildRouteBody(req: RouteRequest) {
         use_tolls: o.avoidTolls ? 0 : 0.5,
         use_ferry: o.avoidFerries ? 0 : 0.5,
         ...(o.shortest ? { shortest: true } : {}),
-        ...tow,
+        ...(req.tow ? tow : req.vehicle ?? {}),
       },
     },
     units: "kilometers",
@@ -112,8 +120,17 @@ interface VTrip {
   legs: { shape: string; summary: { time: number; length: number };
     maneuvers: { type: number; instruction: string; verbal_pre_transition_instruction?: string;
       verbal_transition_alert_instruction?: string; roundabout_exit_count?: number; highway?: boolean;
+      verbal_succinct_transition_instruction?: string; bearing_before?: number; bearing_after?: number;
+      sign?: Record<string, { text: string }[] | undefined>;
       verbal_post_transition_instruction?: string; street_names?: string[]; length: number; time: number;
       begin_shape_index: number; end_shape_index: number }[] }[];
+}
+
+function parseSign(s?: Record<string, { text: string }[] | undefined>) {
+  if (!s) return undefined;
+  const join = (k: string) => s[k]?.map((x) => x.text).slice(0, 2).join(" / ") || undefined;
+  const out = { exitNumber: join("exit_number_elements"), toward: join("exit_toward_elements"), branch: join("exit_branch_elements"), name: join("exit_name_elements") };
+  return Object.values(out).some(Boolean) ? out : undefined;
 }
 
 export function parseTrip(trip: VTrip, id: string): Route {
@@ -128,6 +145,10 @@ export function parseTrip(trip: VTrip, id: string): Route {
       verbalPre: m.verbal_pre_transition_instruction,
       roundaboutExit: m.roundabout_exit_count,
       highway: m.highway,
+      verbalSuccinct: m.verbal_succinct_transition_instruction,
+      sign: parseSign(m.sign),
+      bearingBefore: m.bearing_before,
+      bearingAfter: m.bearing_after,
       verbalPost: m.verbal_post_transition_instruction,
       streetNames: m.street_names ?? [],
       lengthM: m.length * 1000,
@@ -151,7 +172,8 @@ export function parseTrip(trip: VTrip, id: string): Route {
 }
 
 // --- cache: identical requests never hit the public server twice ---------
-const CACHE_KEY = "fq-route-cache";
+// v2: maneuvers carry signs/bearings now — older cached routes lack them
+const CACHE_KEY = "fq-route-cache-v2";
 const CACHE_MAX = 20;
 const memCache = new Map<string, Route[]>();
 

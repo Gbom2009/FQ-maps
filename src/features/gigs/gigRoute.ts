@@ -1,7 +1,7 @@
 import { getRoutes } from "../../nav/valhalla";
 import { HOME } from "../../config/services";
 import { useDrive } from "../../store/drive";
-import { usePlan, towRouting } from "../../store/plan";
+import { usePlan, towRouting, vehicleRouting } from "../../store/plan";
 import { useApp } from "../../store/app";
 import { currentTow } from "../vehicles/store";
 import { translate } from "../../i18n";
@@ -36,7 +36,7 @@ export async function computeGigRoute(gig: Gig): Promise<void> {
   const from = origin();
   const tow = currentTow();
   const [r] = await getRoutes({
-    stops: [from, to], options: usePlan.getState().options, language: useApp.getState().lang, tow: towRouting(tow),
+    stops: [from, to], options: usePlan.getState().options, language: useApp.getState().lang, tow: towRouting(tow), vehicle: vehicleRouting(),
   });
   if (!r) throw new Error("no route");
   useGigs.getState().updateGig(gig.id, {

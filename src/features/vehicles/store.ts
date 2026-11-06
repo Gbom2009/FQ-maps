@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   DEFAULT_TRAILERS, DEFAULT_VEHICLES, NL_TOW_DEFAULTS, combinedDims,
-  type Trailer, type TowCaps, type Vehicle, type TruckDims,
+  type Trailer, type TowCaps, type Vehicle, type TruckDims, type Licence,
 } from "./profiles";
 
 interface VehicleState {
@@ -12,6 +12,8 @@ interface VehicleState {
   /** null = no trailer attached */
   activeTrailerId: string | null;
   towCaps: TowCaps;
+  licence: Licence;
+  setLicence: (l: Licence) => void;
 
   updateVehicle: (id: string, p: Partial<Vehicle>) => void;
   updateTrailer: (id: string, p: Partial<Trailer>) => void;
@@ -34,6 +36,8 @@ export const useVehicles = create<VehicleState>()(
       activeVehicleId: DEFAULT_VEHICLES[0].id,
       activeTrailerId: null,
       towCaps: NL_TOW_DEFAULTS,
+      licence: "B",
+      setLicence: (licence) => set({ licence }),
 
       updateVehicle: (id, p) => set({ vehicles: get().vehicles.map((v) => (v.id === id ? { ...v, ...p } : v)) }),
       updateTrailer: (id, p) => set({ trailers: get().trailers.map((t) => (t.id === id ? { ...t, ...p } : t)) }),
@@ -52,7 +56,17 @@ export const useVehicles = create<VehicleState>()(
       setActiveTrailer: (activeTrailerId) => set({ activeTrailerId }),
       setTowCaps: (c) => set({ towCaps: { ...get().towCaps, ...c } }),
     }),
-    { name: "fq-vehicles" },
+    {
+      name: "fq-vehicles",
+      version: 2,
+      migrate: (state) => {
+        const st = state as VehicleState;
+        st.vehicles = st.vehicles.map((v) => ({ ...(DEFAULT_VEHICLES.find((d) => d.id === v.id) ?? {}), ...v }));
+        st.trailers = st.trailers.map((t) => ({ ...(DEFAULT_TRAILERS.find((d) => d.id === t.id) ?? {}), ...t }));
+        st.licence ??= "B";
+        return st;
+      },
+    },
   ),
 );
 
