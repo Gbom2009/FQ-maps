@@ -311,5 +311,10 @@
   "road.height": "Doorrijhoogte!",
   "road.stopSign": "Stopbord",
   "road.toll": "Tolweg",
-  "road.tunnel": "Tunnel"
+  "road.tunnel": "Tunnel",
+  "sim.speed": "Snelheid",
+  "sim.speed.limit": "Max. snelheid",
+  "sim.speed.planned": "Gepland",
+  "sim.speed.fixed": "Vast",
+  "sim.brake": "Afremmen voor bochten"
 }

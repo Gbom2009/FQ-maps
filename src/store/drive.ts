@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "./storage";
 import type { Fix } from "../location/provider";
 import type { GuidanceState } from "../nav/guidance";
 
@@ -15,6 +16,10 @@ export interface DriveState {
   devTools: boolean;
   simMultiplier: number;
   simNoiseM: number;
+  /** planned = Valhalla averages · limit = exact speed limit · fixed = simFixedKmh */
+  simSpeedMode: "planned" | "limit" | "fixed";
+  simFixedKmh: number;
+  simBrake: boolean;
 
   // --- live session
   fix: Fix | null;
@@ -56,6 +61,9 @@ export const useDrive = create<DriveState>()(
       devTools: !isIOS,
       simMultiplier: 1,
       simNoiseM: 4,
+      simSpeedMode: "limit",
+      simFixedKmh: 80,
+      simBrake: true,
 
       fix: null,
       guidance: null,
@@ -78,8 +86,8 @@ export const useDrive = create<DriveState>()(
       set: (p) => set(p),
     }),
     {
-      name: "fq-drive",
-      partialize: ({ muted, source, devTools, simMultiplier, simNoiseM }) => ({ muted, source, devTools, simMultiplier, simNoiseM }),
+      name: "fq-drive", storage: lazyStorage,
+      partialize: ({ muted, source, devTools, simMultiplier, simNoiseM, simSpeedMode, simFixedKmh, simBrake }) => ({ muted, source, devTools, simMultiplier, simNoiseM, simSpeedMode, simFixedKmh, simBrake }),
     },
   ),
 );

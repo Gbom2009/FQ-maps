@@ -29,6 +29,8 @@ function gauss() {
 export class Simulator implements LocationProvider {
   readonly kind = "simulated" as const;
   multiplier = 1;
+  /** brake for turns and roundabouts */
+  brake = true;
   noiseM = 4;
   paused = false;
 
@@ -53,6 +55,12 @@ export class Simulator implements LocationProvider {
       this.v = 0;
     }
     this.off = null;
+  }
+
+/** Replace the speed profile without moving the car (speed mode / limits changed). */
+  setSpeeds(speeds: number[] | undefined, slowAt?: number[]) {
+    if (!this.path) return;
+    this.path = { ...this.path, speeds, slowAt };
   }
 
   get progress() {
@@ -82,7 +90,7 @@ export class Simulator implements LocationProvider {
     const seg = pointAlong(p.shape, this.cum, this.along).segment;
     let target = p.speeds?.[seg] ?? 50 / 3.6;
     // brake for the next turn: v² ≤ v_turn² + 2·a·d
-    for (const s of p.slowAt ?? []) {
+    for (const s of this.brake ? p.slowAt ?? [] : []) {
       const d = s - this.along;
       if (d < 0) continue;
       if (d > 600) break;

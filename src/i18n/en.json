@@ -311,5 +311,10 @@
   "road.height": "Clearance!",
   "road.stopSign": "Stop sign",
   "road.toll": "Toll road",
-  "road.tunnel": "Tunnel"
+  "road.tunnel": "Tunnel",
+  "sim.speed": "Speed",
+  "sim.speed.limit": "Speed limit",
+  "sim.speed.planned": "Planned",
+  "sim.speed.fixed": "Fixed",
+  "sim.brake": "Brake for turns"
 }

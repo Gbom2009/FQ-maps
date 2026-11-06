@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { X } from "lucide-react";
+import { Segmented } from "../../ui/controls";
 import { useDrive } from "../../store/drive";
 import { usePlan } from "../../store/plan";
 import { useT } from "../../i18n";
@@ -12,7 +13,11 @@ const SPEEDS = [0.5, 1, 2, 4, 8];
 /** Dev panel: fake GPS controls. Shown in Drive mode when the simulator is the location source. */
 export function SimPanel({ onClose }: { onClose: () => void }) {
   const t = useT();
-  const { simMultiplier, simNoiseM, simPaused, set } = useDrive();
+  const { simMultiplier, simNoiseM, simPaused, simSpeedMode, simFixedKmh, simBrake, set } = useDrive();
+  const speedSet = (p: Partial<{ simSpeedMode: "planned" | "limit" | "fixed"; simFixedKmh: number; simBrake: boolean }>) => {
+    set(p);
+    session.applySimSpeeds();
+  };
   const active = usePlan((s) => s.active);
   const [gpxMsg, setGpxMsg] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
@@ -42,6 +47,21 @@ export function SimPanel({ onClose }: { onClose: () => void }) {
             {s}×
           </button>
         ))}
+      </div>
+      <div className="mt-3">
+        <span className="fq-label">{t("sim.speed")}</span>
+        <Segmented value={simSpeedMode} onChange={(v) => speedSet({ simSpeedMode: v })}
+          options={[{ v: "limit", label: t("sim.speed.limit") }, { v: "planned", label: t("sim.speed.planned") }, { v: "fixed", label: t("sim.speed.fixed") }]} />
+        {simSpeedMode === "fixed" && (
+          <label className="mt-2 block text-fq-muted">
+            {simFixedKmh} km/h
+            <input type="range" min={10} max={160} step={5} value={simFixedKmh}
+              onChange={(e) => speedSet({ simFixedKmh: Number(e.target.value) })} className="mt-1 w-full accent-[var(--fq-warn)]" />
+          </label>
+        )}
+        <button aria-pressed={simBrake} onClick={() => speedSet({ simBrake: !simBrake })} className="fq-chip mt-2">
+          {simBrake ? "✓ " : ""}{t("sim.brake")}
+        </button>
       </div>
       <label className="mt-3 block text-fq-muted">
         {t("sim.noise")}: {simNoiseM} m
