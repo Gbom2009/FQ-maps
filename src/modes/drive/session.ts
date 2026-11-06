@@ -2,7 +2,7 @@ import type { Fix, LocationProvider } from "../../location/provider";
 import { RealGps } from "../../location/realGps";
 import { Simulator, type SimPath } from "../../location/simulator";
 import { buildGeometry, GuidanceTracker, DESTINATION_TYPES, type RouteGeometry, type GuidanceState } from "../../nav/guidance";
-import { PromptPlanner, promptText, speak, stopSpeaking } from "../../nav/voice";
+import { PromptPlanner, plannedPrompts, preparePrompts, promptText, speak, stopSpeaking, thresholds, warmUpVoice } from "../../nav/voice";
 import { fetchSpeedLimits, segmentAt, effectiveLimit, isMotorwayClass, type LimitSegment } from "../../nav/speed";
 import { getRoutes, type Route } from "../../nav/valhalla";
 import { decodePolyline } from "../../nav/polyline";
@@ -41,6 +41,7 @@ let limits: LimitSegment[] = [];
 let sessionId: number | null = null;
 let lastReroute = 0;
 let slowSince: number | null = null;
+let preparedFor = -1;
 let tow: TowProfile | null = null;
 let heights: [number, number][] = [];
 let towWarnings: TowWarning[] = [];
@@ -76,6 +77,7 @@ function loadRoute(route: Route) {
   geo = buildGeometry(route);
   tracker = new GuidanceTracker(geo);
   planner = new PromptPlanner();
+  preparedFor = -1;
   limits = [];
   heights = [];
   towWarnings = tow ? computeTowWarnings(geo, []) : [];
@@ -200,10 +202,16 @@ function onFix(f: Fix) {
   if (g.next >= 0) {
     const m = geo.maneuvers[g.next];
     const fast = isMotorwayClass(seg?.roadClass) || f.speedKmh > 75;
+    const lang = useApp.getState().lang;
+    const finalStop = m.leg === geo.legEnds.length - 1 && DESTINATION_TYPES.has(m.type);
+    // pre-render this maneuver’s prompts once it becomes "next" (Piper: zero delay later)
+    if (g.next !== preparedFor) { preparedFor = g.next; preparePrompts(plannedPrompts(m, fast, lang, finalStop), lang); }
     const stage = planner.check(g.next, g.distToNext, fast);
     if (stage) {
-      const finalStop = m.leg === geo.legEnds.length - 1 && DESTINATION_TYPES.has(m.type);
-      say(promptText(m, stage, g.distToNext, useApp.getState().lang, finalStop));
+      // Say the threshold distance when we just crossed it, so the pre-rendered audio matches.
+      const th = thresholds(fast)[stage];
+      const dist = g.distToNext >= th * 0.7 ? th : g.distToNext;
+      say(promptText(m, stage, dist, lang, finalStop));
     }
   }
 
@@ -271,6 +279,8 @@ export function start(active: ActiveRoute) {
   trip = { startedAt: Date.now(), startAlong: 0, km: 0, last: null, lastT: 0, track: createDecimator(50) };
   const d = useDrive.getState();
   d.set({ guidance: null, arrived: false, reroutes: 0, rerouting: false, rerouteError: null, follow: true, simPaused: false });
+  preparedFor = -1;
+  warmUpVoice(useApp.getState().lang);
   loadRoute(active.route);
   ensureProvider();
   if (sim) sim.setPath(simPathFromRoute(geo!));

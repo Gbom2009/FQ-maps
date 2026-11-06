@@ -1,6 +1,7 @@
 import type { FlatManeuver } from "./guidance";
 import { DESTINATION_TYPES } from "./guidance";
 import type { Lang } from "../i18n";
+import { say, stopAll } from "./tts";
 
 /**
  * Voice prompt planning (pure, tested) + speech output (Web Speech API).
@@ -69,30 +70,14 @@ export class PromptPlanner {
 }
 
 // --- speech output -------------------------------------------------------
-let cachedVoice: SpeechSynthesisVoice | null | undefined;
+// Delegates to the TTS module (Piper neural voice or the best system voice).
+export { prepare as preparePrompts, warmUp as warmUpVoice } from "./tts";
 
-function pickVoice(lang: Lang): SpeechSynthesisVoice | null {
-  const want = lang === "nl" ? "nl" : "en";
-  const voices = speechSynthesis.getVoices();
-  return voices.find((v) => v.lang.toLowerCase().startsWith(want) && v.localService)
-    ?? voices.find((v) => v.lang.toLowerCase().startsWith(want)) ?? null;
-}
+export function speak(text: string, lang: Lang) { void say(text, lang); }
+export function stopSpeaking() { stopAll(); }
 
-export function hasVoice(lang: Lang): boolean {
-  return typeof speechSynthesis !== "undefined" && pickVoice(lang) !== null;
-}
-
-export function speak(text: string, lang: Lang) {
-  if (typeof speechSynthesis === "undefined") return;
-  if (cachedVoice === undefined || cachedVoice?.lang.slice(0, 2) !== (lang === "nl" ? "nl" : "en")) cachedVoice = pickVoice(lang);
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang === "nl" ? "nl-NL" : "en-GB";
-  if (cachedVoice) u.voice = cachedVoice;
-  u.rate = 1.02;
-  speechSynthesis.cancel(); // newest instruction wins
-  speechSynthesis.speak(u);
-}
-
-export function stopSpeaking() {
-  if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+/** The texts this maneuver will produce, for pre-rendering (thresholds, not live distances). */
+export function plannedPrompts(m: FlatManeuver, fast: boolean, lang: Lang, finalStop: boolean): string[] {
+  const th = thresholds(fast);
+  return (["far", "mid", "now"] as Stage[]).map((s) => promptText(m, s, th[s], lang, finalStop));
 }

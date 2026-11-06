@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import type { Place } from "../nav/geocode";
 import { DEFAULT_OPTIONS, getRoutes, type Route, type RouteOptions } from "../nav/valhalla";
 import { useApp } from "./app";
+import { unlockAudio } from "../nav/tts/piper";
 import { currentTow, useVehicles, type TowProfile } from "../features/vehicles/store";
 import type { TowRouting } from "../nav/valhalla";
 
@@ -108,6 +109,7 @@ export const usePlan = create<PlanState>()(
       },
 
       startDrive: (gigId) => {
+        unlockAudio(); // this runs inside the tap: lets iOS play voice audio later
         const { routes, selected, stops } = get();
         const route = routes[selected];
         if (!route) return;
