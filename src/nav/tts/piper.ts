@@ -1,6 +1,6 @@
 // onnxruntime-web doesn’t export its .wasm files, so reference the file directly
 import ortWasmUrl from "../../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm?url";
-import { useVoice, type PiperVoiceId } from "./store";
+import { PIPER_VOICES, useVoice, type PiperVoiceId } from "./store";
 
 /**
  * Piper neural TTS (open source, MIT) running fully on the device in
@@ -22,6 +22,48 @@ const RUNTIME = {
 const CACHE = "fq-tts-runtime-v1";
 
 type Session = { predict(text: string): Promise<Blob> };
+
+/**
+ * Voices newer than the library’s built-in list live in the official
+ * rhasspy/piper-voices repo. The library builds URLs as `${HF_BASE}/${path}`
+ * (HF_BASE = .../diffusionstudio/piper-voices/resolve/main), so a path that
+ * climbs out of it lands on rhasspy’s repo; fetch() normalises the "..".
+ */
+let registered = false;
+async function registerExtraVoices() {
+  if (registered) return;
+  const lib = await import("@mintplex-labs/piper-tts-web");
+  const map = lib.PATH_MAP as Record<string, string>;
+  for (const v of PIPER_VOICES) {
+    if (v.extra && !map[v.id]) map[v.id] = `../../../../rhasspy/piper-voices/resolve/main/${v.extra}/${v.id}.onnx`;
+  }
+  registered = true;
+}
+
+/**
+ * The official rhasspy configs of single-speaker voices have no
+ * "speaker_id_map", which the library reads unconditionally. Add an empty one
+ * to the copy stored on the device (OPFS), before a session is created.
+ */
+async function fixStoredConfig(voiceId: PiperVoiceId) {
+  if (!PIPER_VOICES.find((v) => v.id === voiceId)?.extra) return;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle("piper");
+      const h = await dir.getFileHandle(`${voiceId}.onnx.json`);
+      const cfg = JSON.parse(await (await h.getFile()).text()) as Record<string, unknown>;
+      if (cfg.speaker_id_map && typeof cfg.speaker_id_map === "object") return;
+      cfg.speaker_id_map = {};
+      const w = await h.createWritable();
+      await w.write(JSON.stringify(cfg));
+      await w.close();
+      return;
+    } catch {
+      // the library writes downloads without awaiting them — give it a moment
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+}
 let session: Session | null = null;
 let sessionVoice: PiperVoiceId | null = null;
 let loading: Promise<Session> | null = null;
@@ -68,6 +110,7 @@ export async function downloadVoice(voiceId: PiperVoiceId, totalMb: number): Pro
   const st = useVoice.getState();
   st.set({ status: "downloading", progress: 0, error: null });
   try {
+    await registerExtraVoices();
     const piper = await import("@mintplex-labs/piper-tts-web");
     // phonemizer ≈ 18 MB, model ≈ totalMb
     const total = (totalMb + 18) * 1e6;
@@ -79,6 +122,7 @@ export async function downloadVoice(voiceId: PiperVoiceId, totalMb: number): Pro
       URL.revokeObjectURL(url);
     }
     await piper.download(voiceId, (p: { loaded: number; total: number }) => { modelBytes = p.loaded; report(); });
+    await fixStoredConfig(voiceId);
     const s = useVoice.getState();
     s.set({ downloaded: [...new Set([...s.downloaded, voiceId])], status: "none", progress: 1 });
     await loadSession(voiceId);
@@ -89,6 +133,7 @@ export async function downloadVoice(voiceId: PiperVoiceId, totalMb: number): Pro
 }
 
 export async function removeVoice(voiceId: PiperVoiceId) {
+  await registerExtraVoices();
   const piper = await import("@mintplex-labs/piper-tts-web");
   await piper.remove(voiceId).catch(() => undefined);
   const s = useVoice.getState();
@@ -104,12 +149,14 @@ export function loadSession(voiceId: PiperVoiceId): Promise<Session> {
   cache.clear();
   useVoice.getState().set({ status: "loading", error: null });
   loading = (async () => {
+    await registerExtraVoices();
     if (!(await runtimeCached()) && !navigator.onLine) throw new Error("offline: runtime not downloaded");
     const [{ TtsSession }, piperWasm, piperData] = await Promise.all([
       import("@mintplex-labs/piper-tts-web"),
       cachedUrl(RUNTIME.piperWasm), cachedUrl(RUNTIME.piperData),
     ]);
     const ortWasm = new URL(ortWasmUrl, location.href).href;
+    await fixStoredConfig(voiceId);
     // the library keeps a singleton; drop it so a different voice really loads
     (TtsSession as unknown as { _instance: unknown })._instance = null;
     const s = await TtsSession.create({

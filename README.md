@@ -26,11 +26,31 @@ Tauri 2 + React + TypeScript + Vite + Tailwind v4 + MapLibre GL. See `CLAUDE.md`
 Settings → Stem.
 - **Piper (neural):** natural Dutch voice that runs on the device (WebAssembly). Tap *Download* once
   (voice model 63–77 MB + phonemizer 18 MB, from Hugging Face / jsDelivr); after that it works offline.
-  Upcoming instructions are pre-rendered, so they play without delay. Voices: `nl_NL-mls` (Dutch),
-  `nl_BE-nathalie` / `nl_BE-rdh` (Flemish). The ONNX runtime is bundled with the app.
+  Upcoming instructions are pre-rendered, so they play without delay. Voices: Pim, Ronnie, Alex (newest Dutch, CC0 data, from rhasspy/piper-voices),
+  mls (Dutch), Nathalie / RDH (Flemish). The ONNX runtime is bundled with the app.
 - **System voice:** instant, no download; the best installed voice is picked automatically (Natural/Enhanced first).
   On iPhone, download *Xander/Claire (Enhanced)* under Accessibility → Spoken Content for a big quality jump.
 - If Piper can’t run (not downloaded, error), the system voice speaks — instructions are never dropped.
+
+## Guidance (voice detail)
+Settings → Begeleiding: **Kort / Normaal / Uitgebreid / Max**, plus an on/off switch per topic.
+Turn instructions are rewritten into natural Dutch and enriched with traffic lights, exit numbers + direction,
+roundabout size, "en daarna direct…", cycle lanes/paths and one-way streets. Road info comes from:
+- **Valhalla trace_attributes** (per edge): speed limit, road class, cycle lane, one-way, lanes, roundabout, bridge,
+  tunnel, toll, surface, traffic lights, junction arms (also used to draw roundabouts/junctions as vector art).
+- **OpenStreetMap via Overpass** (once per route, small bounding boxes, rotating mirrors with back-off): speed cameras,
+  zebra/other crossings, level crossings, speed bumps, stop/give-way, height and weight limits. Public Overpass servers
+  are often overloaded — the app then guides without these details and retries.
+- **Speed cameras only in NL and BE** (warning is illegal in DE/FR/CH/AT). Borders: Natural Earth 1:50m
+  (`npm run data:borders`); within 1.5 km of a foreign border the app stays silent.
+- **Milieuzone rules** per city from milieuzones.nl (checked 2026-11-06) in `src/features/phev/zoneRules.ts`,
+  compared with the car's fuel, category and Euro class. Update that file when the rules change.
+
+## Vehicles
+Every car/trailer field can be filled in (identity, fuel + Euro class, dimensions incl. roof box / bike rack, weights,
+towing limits, tank/battery, consumption, prices, cruise speed, notes). The app uses them: Valhalla `auto` costing with
+height/width/cruise speed (or `truck` with combined dims when towing), licence checks (B / B+96 / BE), towing-weight
+checks, range and cost per trip, milieuzone verdicts, height/weight-limit warnings, and the puck colour.
 
 ## Towing
 Attach a trailer in Plan → route options (or Settings → Aanhangers). Routes then use Valhalla `truck` costing with the

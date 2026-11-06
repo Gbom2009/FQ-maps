@@ -6,9 +6,13 @@ export type PiperStatus = "none" | "downloading" | "loading" | "ready" | "error"
 
 /** Dutch Piper voices worth offering (all run offline once downloaded). */
 export const PIPER_VOICES = [
-  { id: "nl_NL-mls-medium", label: "Nederlands — mls (medium)", mb: 77 },
-  { id: "nl_BE-nathalie-medium", label: "Vlaams — Nathalie (vrouw)", mb: 63 },
-  { id: "nl_BE-rdh-medium", label: "Vlaams — RDH (man)", mb: 63 },
+  // newest Dutch (NL) studio voices — single speaker, CC0 data: usually the best sounding
+  { id: "nl_NL-pim-medium", label: "Nederlands — Pim", mb: 64, extra: "nl/nl_NL/pim/medium" },
+  { id: "nl_NL-ronnie-medium", label: "Nederlands — Ronnie", mb: 63, extra: "nl/nl_NL/ronnie/medium" },
+  { id: "nl_NL-alex-medium", label: "Nederlands — Alex", mb: 64, extra: "nl/nl_NL/alex/medium" },
+  { id: "nl_NL-mls-medium", label: "Nederlands — mls (luisterboeken)", mb: 77, extra: undefined },
+  { id: "nl_BE-nathalie-medium", label: "Vlaams — Nathalie (vrouw)", mb: 63, extra: undefined },
+  { id: "nl_BE-rdh-medium", label: "Vlaams — RDH (man)", mb: 63, extra: undefined },
 ] as const;
 export type PiperVoiceId = (typeof PIPER_VOICES)[number]["id"];
 
@@ -32,7 +36,7 @@ export const useVoice = create<VoiceState>()(
   persist(
     (set) => ({
       engine: "system",
-      piperVoice: "nl_NL-mls-medium",
+      piperVoice: "nl_NL-pim-medium",
       systemVoice: "",
       rate: 1,
       volume: 1,
