@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, FlaskConical, Leaf, LocateFixed, Map as MapIcon, MoreHorizontal, Share2, SkipForward,
+  AlertTriangle, ArrowUpToLine, Camera, Euro, FlaskConical, Footprints, Mountain, OctagonX, TrainFront, Leaf, LocateFixed, Map as MapIcon, MoreHorizontal, Share2, SkipForward,
   Truck, Volume2, VolumeX, X, Zap,
 } from "lucide-react";
 import { useT } from "../../i18n";
@@ -12,16 +12,33 @@ import { isSpeeding } from "../../nav/speed";
 import { buildGeometry } from "../../nav/guidance";
 import { stopSpeaking } from "../../nav/voice";
 import { ManeuverIcon } from "./ManeuverIcon";
+import { JunctionArt } from "./JunctionArt";
 import { SimPanel } from "./SimPanel";
 import * as session from "./session";
 import { etaMessage, shareText } from "../../features/gigs/shareEta";
 import { useGigs } from "../../features/gigs/store";
+import { useMapSettings } from "../../map/settings";
 
 /** Maneuver distance the way a HUD should show it: coarse when far, fine when close. */
 function hudDistance(m: number, lang: "nl" | "en") {
   if (m < 100) return `${Math.max(0, Math.round(m / 10) * 10)} m`;
   if (m < 1000) return `${Math.round(m / 50) * 50} m`;
   return formatDistance(m, lang);
+}
+
+/** Small pictogram per road-detail topic. */
+function RoadIcon({ topic }: { topic: string }) {
+  const cls = "h-7 w-7 shrink-0";
+  switch (topic) {
+    case "camera": return <Camera className={`${cls} text-fq-danger`} />;
+    case "rail": return <TrainFront className={cls} />;
+    case "zebra": return <Footprints className={cls} />;
+    case "height": return <ArrowUpToLine className={cls} />;
+    case "stopSign": return <OctagonX className={`${cls} text-fq-danger`} />;
+    case "toll": return <Euro className={cls} />;
+    case "tunnel": return <Mountain className={cls} />;
+    default: return <AlertTriangle className={cls} />;
+  }
 }
 
 /** Round floating button, 60 px — big enough with a glove on, at arm's length. */
@@ -48,10 +65,12 @@ export function DriveMode() {
   const active = usePlan((s) => s.active);
   const endDrive = usePlan((s) => s.endDrive);
   const {
-    fix, guidance: g, limitKmh, postedKmh, capKmh, towWarning, zoneNotice, muted, follow, rerouting, rerouteError,
+    fix, guidance: g, limitKmh, postedKmh, capKmh, towWarning, zoneNotice, roadNotice, muted, follow, rerouting, rerouteError,
     arrived, gpsError, locked, source, devTools, set,
   } = useDrive();
   const gig = useGigs((s) => s.gigs.find((x) => x.id === active?.gigId));
+  const { etaMode, showThen, bannerSize } = useMapSettings();
+  const big = bannerSize === "large";
   const [more, setMore] = useState(false);
   const [showSim, setShowSim] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -85,6 +104,13 @@ export function DriveMode() {
         <div className="fq-floating flex items-center gap-2 rounded-2xl border-fq-warn! px-4 py-3 text-[17px] text-fq-warn">
           <AlertTriangle size={22} className="shrink-0" />
           {towWarning.kind === "sharp" ? t("tow.warn.sharp") : towWarning.kind === "narrow" ? t("tow.warn.narrow") : `${t("tow.warn.descent")} ${towWarning.gradePct}%`}
+        </div>
+      )}
+      {roadNotice && !arrived && (
+        <div className={`fq-floating flex items-center gap-3 rounded-2xl px-4 py-3 text-[17px] ${roadNotice.topic === "height" ? "border-fq-danger! text-fq-danger" : roadNotice.topic === "camera" ? "border-fq-danger! text-fq-strong" : "text-fq-strong"}`}>
+          <RoadIcon topic={roadNotice.topic} />
+          <span className="flex-1">{t(`road.${roadNotice.topic}` as never)}</span>
+          <span className="font-display text-xl">{hudDistance(roadNotice.dist, lang)}</span>
         </div>
       )}
       {zoneNotice && !arrived && (
@@ -122,13 +148,18 @@ export function DriveMode() {
           ) : next && g ? (
             <>
               <div className="flex items-center gap-4 bg-fq-primary px-4 py-3.5 text-[#040404]">
-                <ManeuverIcon type={next.type} exit={next.roundaboutExit} className="h-[72px] w-[72px] shrink-0" />
+                {(() => {
+                  const art = session.maneuverArtAt(g.next);
+                  return art
+                    ? <JunctionArt art={art} className="h-[80px] w-[80px] shrink-0" />
+                    : <ManeuverIcon type={next.type} exit={next.roundaboutExit} className="h-[72px] w-[72px] shrink-0" />;
+                })()}
                 <div className="min-w-0 flex-1">
-                  <div className="font-display text-[46px] leading-none tracking-[-0.02em]">{hudDistance(g.distToNext, lang)}</div>
-                  <div className="mt-1 line-clamp-2 text-[19px] leading-snug">{next.streetNames[0] ?? next.instruction}</div>
+                  <div className={`font-display leading-none tracking-[-0.02em] ${big ? "text-[60px]" : "text-[46px]"}`}>{hudDistance(g.distToNext, lang)}</div>
+                  <div className={`mt-1 line-clamp-2 leading-snug ${big ? "text-[24px]" : "text-[19px]"}`}>{next.streetNames[0] ?? next.instruction}</div>
                 </div>
               </div>
-              {after && after.along - next.along < 400 && (
+              {showThen && after && after.along - next.along < 400 && (
                 <div className="flex items-center gap-2 bg-[#b9640d] px-5 py-2 text-[15px] text-[#040404]">
                   {t("drive.then")} <ManeuverIcon type={after.type} className="h-6 w-6" /> <span className="truncate">{after.streetNames[0] ?? ""}</span>
                 </div>
@@ -184,9 +215,11 @@ export function DriveMode() {
           <div className="min-w-0 flex-1 text-center">
             {active && g && !arrived ? (
               <>
-                <div className="font-display text-[34px] leading-none text-fq-primary">{formatClock(new Date(Date.now() + g.remainingS * 1000))}</div>
+                <div className="font-display text-[34px] leading-none text-fq-primary">
+                  {etaMode === "arrival" ? formatClock(new Date(Date.now() + g.remainingS * 1000)) : formatDuration(g.remainingS, lang)}
+                </div>
                 <div className="mt-1 truncate text-[15px] text-fq-text">
-                  {formatDuration(g.remainingS, lang)} · {formatDistance(g.remainingM, lang)}
+                  {etaMode === "arrival" ? formatDuration(g.remainingS, lang) : `${t("drive.eta")} ${formatClock(new Date(Date.now() + g.remainingS * 1000))}`} · {formatDistance(g.remainingM, lang)}
                   {multiStop && nextStop ? <span className="text-fq-muted"> · {t("drive.toStop")} {formatDistance(g.legRemainingM, lang)}</span> : null}
                 </div>
               </>

@@ -29,6 +29,12 @@ export interface DriveState {
   limitsStatus: "none" | "loading" | "ok" | "error";
   /** milieuzone ahead / EV-mode hint for the HUD */
   zoneNotice: { kind: "zone" | "ev"; text: string; along: number } | null;
+  /** next road detail ahead (camera, level crossing, zebra…) for the HUD */
+  roadNotice: { topic: string; dist: number; text: string } | null;
+  featuresStatus: "none" | "loading" | "ok" | "partial" | "error";
+  featureCount: number;
+  /** bumps when route-detail data (features, limits) changes */
+  detailVersion: number;
   follow: boolean;
   rerouting: boolean;
   rerouteError: string | null;
@@ -56,6 +62,10 @@ export const useDrive = create<DriveState>()(
       limitsStatus: "none",
       towWarning: null,
       zoneNotice: null,
+      roadNotice: null,
+      featuresStatus: "none",
+      featureCount: 0,
+      detailVersion: 0,
       follow: true,
       rerouting: false,
       rerouteError: null,

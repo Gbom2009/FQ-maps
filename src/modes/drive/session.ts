@@ -2,11 +2,11 @@ import type { Fix, LocationProvider } from "../../location/provider";
 import { RealGps } from "../../location/realGps";
 import { Simulator, type SimPath } from "../../location/simulator";
 import { buildGeometry, GuidanceTracker, DESTINATION_TYPES, type RouteGeometry, type GuidanceState } from "../../nav/guidance";
-import { PromptPlanner, plannedPrompts, preparePrompts, promptText, speak, stopSpeaking, thresholds, warmUpVoice } from "../../nav/voice";
+import { PromptPlanner, preparePrompts, stopSpeaking, thresholds, warmUpVoice } from "../../nav/voice";
 import { fetchSpeedLimits, segmentAt, effectiveLimit, isMotorwayClass, type LimitSegment } from "../../nav/speed";
 import { getRoutes, type Route } from "../../nav/valhalla";
 import { decodePolyline } from "../../nav/polyline";
-import { usePlan, towRouting, type ActiveRoute, type Stop } from "../../store/plan";
+import { usePlan, towRouting, vehicleRouting, type ActiveRoute, type Stop } from "../../store/plan";
 import { useDrive, LOCK_KMH, UNLOCK_AFTER_MS } from "../../store/drive";
 import { useApp } from "../../store/app";
 import { translate } from "../../i18n";
@@ -20,6 +20,13 @@ import { haversine } from "../../nav/geo";
 import { evHints, loadZones, urbanStretches, zoneEntries, type EvHint, type ZoneEntry } from "../../features/phev/zones";
 import { usePhev } from "../../features/phev/store";
 import { spokenDistance } from "../../nav/voice";
+import { say as ttsSay, stopAll as ttsStop } from "../../nav/tts";
+import { fetchRoadFeatures, type RoadFeature } from "../../nav/osmFeatures";
+import { buildEvents, turnContext, type NarrationEvent } from "../../nav/narration/events";
+import { richInstruction } from "../../nav/narration/instructions";
+import { maneuverArt, type ManeuverArt } from "../../nav/narration/art";
+import { enabledTopics, useGuidance } from "../../nav/narration/settings";
+import { effectiveHeight } from "../../features/vehicles/apply";
 
 /**
  * Drive session controller (framework-free). Owns the location provider,
@@ -52,13 +59,95 @@ let zoneSaid = new Set<string>();
 /** announce zone entries / EV hints this far ahead */
 const ZONE_WARN_M = 1000;
 const EV_HINT_M = 600;
+let features: RoadFeature[] = [];
+let events: NarrationEvent[] = [];
+let spokenEv = new Set<string>();
+let preparedEv = new Set<string>();
+
+function narrationVehicle() {
+  const v = activeVehicle();
+  const label = v ? (v.make && v.model ? v.make + " " + v.model : v.name) : "auto";
+  const heightM = tow ? tow.dims.heightM : v ? effectiveHeight(v) : undefined;
+  const weightT = tow ? tow.dims.weightT : v?.maxMassKg ? v.maxMassKg / 1000 : v?.weightKg ? v.weightKg / 1000 : undefined;
+  return { v, label, heightM, weightT };
+}
+
+function refreshNarration() {
+  if (!geo) return;
+  useDrive.getState().set({ detailVersion: useDrive.getState().detailVersion + 1 });
+  const nv = narrationVehicle();
+  events = buildEvents({
+    g: geo, limits, features, zones, vehicle: nv.v, vehicleLabel: nv.label,
+    heightM: nv.heightM, weightT: nv.weightT, on: enabledTopics(), lang: useApp.getState().lang,
+  });
+}
+
+const NOTICE_TOPICS = new Set(["camera", "rail", "zebra", "height", "stopSign", "toll", "tunnel"]);
+
+/** Speak road-info events that are due; pre-render the next few; feed the HUD chip. */
+function checkNarration(g: GuidanceState, f: Fix) {
+  const d = useDrive.getState();
+  const scale = useGuidance.getState().leadScale * Math.max(1, f.speedKmh / 80);
+  const lang = useApp.getState().lang;
+  let notice: { topic: string; dist: number; text: string } | null = null;
+  for (const e of events) {
+    const dist = e.along - g.along;
+    if (dist < -10) continue;
+    if (dist > 2500) break;
+    const lead = Math.max(30, e.lead * scale);
+    const rounded = Math.round(lead / 50) * 50;
+    if (!preparedEv.has(e.id) && dist < lead + 800) { preparedEv.add(e.id); preparePrompts([e.text(rounded)], lang); }
+    if (!notice && dist <= Math.max(lead, 300) && NOTICE_TOPICS.has(e.topic)) {
+      notice = { topic: e.topic, dist: Math.max(0, Math.round(dist)), text: e.text(Math.max(0, dist)) };
+    }
+    if (spokenEv.has(e.id) || dist > lead) continue;
+    spokenEv.add(e.id);
+    // say the lead distance when we just crossed it (matches the pre-rendered audio)
+    say(e.text(dist >= lead * 0.7 ? rounded : dist), e.prio === 0 ? "critical" : "info", e.prio);
+  }
+  const prev = d.roadNotice;
+  if (notice?.topic !== prev?.topic || Math.abs((notice?.dist ?? 0) - (prev?.dist ?? 0)) > 20) d.set({ roadNotice: notice });
+}
+
 /** announce tow warnings this far ahead */
 const TOW_WARN_M = 300;
 
 export const simulator = () => sim;
 
-function say(text: string) {
-  if (!useDrive.getState().muted) speak(text, useApp.getState().lang);
+// ---- speech queue: turn instructions interrupt, info waits its turn -------
+let speaking = false;
+let lastTurnAt = 0;
+let infoQueue: { text: string; prio: number; at: number }[] = [];
+
+function run(text: string) {
+  speaking = true;
+  let done = false;
+  const finish = () => { if (done) return; done = true; speaking = false; setTimeout(pump, 600); };
+  // never let a voice that forgets to report "ended" block the queue
+  const guard = setTimeout(finish, Math.min(20_000, 2500 + text.length * 90));
+  void ttsSay(text, useApp.getState().lang).finally(() => { clearTimeout(guard); finish(); });
+}
+function pump() {
+  if (speaking || !infoQueue.length || useDrive.getState().muted) return;
+  if (Date.now() - lastTurnAt < 1500) { setTimeout(pump, 700); return; }
+  const now = Date.now();
+  infoQueue = infoQueue.filter((q) => now - q.at < 20_000); // stale info is worse than none
+  const next = infoQueue.shift();
+  if (next) run(next.text);
+}
+/** kind "turn"/"critical" interrupts whatever is playing; "info" queues by priority. */
+function say(text: string, kind: "turn" | "critical" | "info" = "turn", prio = 3) {
+  if (useDrive.getState().muted) return;
+  if (kind === "info") {
+    infoQueue.push({ text, prio, at: Date.now() });
+    infoQueue.sort((a, b) => a.prio - b.prio);
+    pump();
+    return;
+  }
+  infoQueue = infoQueue.filter((q) => q.prio === 0);
+  ttsStop();
+  lastTurnAt = Date.now();
+  run(text);
 }
 const t = (k: Parameters<typeof translate>[1]) => translate(useApp.getState().lang, k);
 
@@ -86,12 +175,20 @@ function loadRoute(route: Route) {
   const forSession = sessionId;
   const g = geo;
   zones = []; hints = []; zoneSaid = new Set();
+  features = []; events = []; spokenEv = new Set(); preparedEv = new Set();
+  useDrive.getState().set({ featuresStatus: "loading", roadNotice: null });
+  void fetchRoadFeatures(g).then((r) => {
+    if (geo !== g) return;
+    features = r.features;
+    refreshNarration();
+    useDrive.getState().set({ featuresStatus: r.complete ? "ok" : "partial", featureCount: r.features.length });
+  }).catch(() => useDrive.getState().set({ featuresStatus: "error" }));
   const refreshHints = () => {
     if (geo !== g) return;
     hints = evHints(zones, urbanStretches(g, limits), activeVehicle()?.evRangeKm);
   };
-  void loadZones().then((z) => { if (geo === g) { zones = zoneEntries(g, z); refreshHints(); } });
-  const refreshWarnings = () => { if (tow && geo === g) towWarnings = computeTowWarnings(g, limits, heights); refreshHints(); };
+  void loadZones().then((z) => { if (geo === g) { zones = zoneEntries(g, z); refreshHints(); refreshNarration(); } });
+  const refreshWarnings = () => { if (tow && geo === g) towWarnings = computeTowWarnings(g, limits, heights); refreshHints(); refreshNarration(); };
   fetchSpeedLimits(route.legs.map((l) => l.shape), decodePolyline, tow ? "truck" : "auto")
     .then((l) => { if (sessionId === forSession) { limits = l; refreshWarnings(); useDrive.getState().set({ limitsStatus: "ok" }); } })
     .catch(() => { if (sessionId === forSession) useDrive.getState().set({ limitsStatus: "error" }); });
@@ -115,10 +212,8 @@ function checkZones(g: GuidanceState) {
       const key = `z${z.along}`;
       const dist = Math.max(0, z.along - g.along);
       notice = { kind: "zone", along: z.along, text: `${z.zone.name}${dist > 50 ? ` · ${spokenDistance(dist, lang)}` : ""}` };
-      if (!zoneSaid.has(key) && z.along > 0) {
-        zoneSaid.add(key);
-        say(t("phev.voice.zone").replace("{zone}", z.zone.name).replace("{dist}", spokenDistance(Math.max(100, dist), lang)));
-      }
+      // the spoken announcement (with your car's verdict) comes from the narration events
+      void key;
     }
   }
   if (p.evHints && !notice) {
@@ -126,7 +221,7 @@ function checkZones(g: GuidanceState) {
     if (h) {
       notice = { kind: "ev", along: h.along, text: t("phev.ev") };
       const key = `e${h.along}`;
-      if (!zoneSaid.has(key)) { zoneSaid.add(key); say(t(h.kind === "zone" ? "phev.voice.evZone" : "phev.voice.evUrban")); }
+      if (!zoneSaid.has(key)) { zoneSaid.add(key); say(t(h.kind === "zone" ? "phev.voice.evZone" : "phev.voice.evUrban"), "info", 3); }
     }
   }
   if (notice?.text !== d.zoneNotice?.text) d.set({ zoneNotice: notice });
@@ -139,7 +234,7 @@ function checkTowWarnings(g: GuidanceState) {
   if (ahead && !warned.has(ahead.along)) {
     warned.add(ahead.along);
     const k = ahead.kind === "sharp" ? "tow.voice.sharp" : ahead.kind === "narrow" ? "tow.voice.narrow" : "tow.voice.descent";
-    say(t(k));
+    say(t(k), "info", 1);
   }
   const show = ahead ?? null;
   if (show?.along !== d.towWarning?.along) d.set({ towWarning: show });
@@ -197,6 +292,7 @@ function onFix(f: Fix) {
   d.set({ fix: f, guidance: g, limitKmh, postedKmh: seg?.limitKmh, capKmh, gpsError: null });
   checkTowWarnings(g);
   checkZones(g);
+  checkNarration(g, f);
 
   // voice
   if (g.next >= 0) {
@@ -205,13 +301,20 @@ function onFix(f: Fix) {
     const lang = useApp.getState().lang;
     const finalStop = m.leg === geo.legEnds.length - 1 && DESTINATION_TYPES.has(m.type);
     // pre-render this maneuver’s prompts once it becomes "next" (Piper: zero delay later)
-    if (g.next !== preparedFor) { preparedFor = g.next; preparePrompts(plannedPrompts(m, fast, lang, finalStop), lang); }
+    const on = enabledTopics();
+    const ctx = limits.length ? turnContext(m, limits) : undefined;
+    const after = geo.maneuvers[g.next + 1];
+    if (g.next !== preparedFor) {
+      preparedFor = g.next;
+      const th = thresholds(fast);
+      preparePrompts((["far", "mid", "now"] as const).map((st) => richInstruction(m, st, th[st], lang, finalStop, ctx, after, on)), lang);
+    }
     const stage = planner.check(g.next, g.distToNext, fast);
     if (stage) {
       // Say the threshold distance when we just crossed it, so the pre-rendered audio matches.
       const th = thresholds(fast)[stage];
       const dist = g.distToNext >= th * 0.7 ? th : g.distToNext;
-      say(promptText(m, stage, dist, lang, finalStop));
+      say(richInstruction(m, stage, dist, lang, finalStop, ctx, after, on), "turn");
     }
   }
 
@@ -255,6 +358,7 @@ async function reroute(f: Fix, g: GuidanceState | null, skipNextStop = false) {
       options: active.options,
       language: useApp.getState().lang,
       tow: towRouting(active.tow),
+      vehicle: vehicleRouting(),
     });
     if (!route || sessionId !== active.sessionId) return;
     usePlan.getState().setActiveRoute(route, [here, ...remaining]);
@@ -343,4 +447,33 @@ export function remainingShape(): [number, number][] | null {
   if (!geo || !g) return null;
   const i = geoSegment(g);
   return [g.snapped, ...geo.shape.slice(i + 1)];
+}
+
+/** Junction/roundabout drawing for maneuver i (real arms once road data is in). */
+export function maneuverArtAt(i: number): ManeuverArt | undefined {
+  if (!geo || i < 0) return undefined;
+  const m = geo.maneuvers[i];
+  return m ? maneuverArt(m, geo.maneuvers[i + 1], limits) : undefined;
+}
+
+/** Points + cycle-lane lines for the map's route-detail overlay. */
+export function roadDetailData(): { points: { kind: string; lon: number; lat: number; label?: string }[]; cycle: [number, number][][] } {
+  if (!geo) return { points: [], cycle: [] };
+  const g = geo;
+  const points: { kind: string; lon: number; lat: number; label?: string }[] = features
+    .filter((f) => f.kind !== "crossing")
+    .map((f) => ({ kind: f.kind, lon: f.lon, lat: f.lat, label: f.kind === "camera" && f.value ? String(f.value) : f.kind === "maxheight" && f.value ? f.value + " m" : undefined }));
+  // traffic lights from the road data (end node of an edge)
+  for (const sg of limits) {
+    if (!sg.signal) continue;
+    const p = g.shape[Math.min(sg.to, g.shape.length - 1)];
+    if (p) points.push({ kind: "signal", lon: p[0], lat: p[1] });
+  }
+  const cycle: [number, number][][] = [];
+  for (const sg of limits) {
+    if (sg.cycleLane !== "shared" && sg.cycleLane !== "dedicated") continue;
+    const line = g.shape.slice(sg.from, sg.to + 1);
+    if (line.length > 1) cycle.push(line);
+  }
+  return { points, cycle };
 }
