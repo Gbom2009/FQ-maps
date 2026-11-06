@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { X } from "lucide-react";
 import { useDrive } from "../../store/drive";
 import { usePlan } from "../../store/plan";
 import { useT } from "../../i18n";
@@ -9,11 +10,10 @@ import * as session from "./session";
 const SPEEDS = [0.5, 1, 2, 4, 8];
 
 /** Dev panel: fake GPS controls. Shown in Drive mode when the simulator is the location source. */
-export function SimPanel() {
+export function SimPanel({ onClose }: { onClose: () => void }) {
   const t = useT();
   const { simMultiplier, simNoiseM, simPaused, set } = useDrive();
   const active = usePlan((s) => s.active);
-  const [open, setOpen] = useState(() => window.innerWidth >= 768);
   const [gpxMsg, setGpxMsg] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
 
@@ -28,26 +28,17 @@ export function SimPanel() {
     }
   };
 
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)}
-        className="pointer-events-auto absolute left-4 top-[13.5rem] h-11 border border-fq-warn bg-fq-bg/92 px-3 text-[11px] text-fq-warn max-md:left-auto max-md:right-4 max-md:top-[12rem]">
-        SIM {simMultiplier}×
-      </button>
-    );
-  }
-
   return (
-    <section className="pointer-events-auto absolute left-4 top-[13.5rem] w-60 border border-fq-warn bg-fq-bg/95 p-3 text-[12px] max-md:left-auto max-md:right-4 max-md:top-[12rem]">
+    <section className="fq-floating pointer-events-auto absolute bottom-[calc(env(safe-area-inset-bottom)+13rem)] right-3 z-40 w-[min(20rem,calc(100%-1.5rem))] rounded-2xl border-fq-warn! p-4 text-[13px]">
       <div className="mb-2 flex items-center justify-between">
         <span className="uppercase tracking-widest text-fq-warn">{t("sim.title")}</span>
-        <button onClick={() => setOpen(false)} className="h-7 w-7 text-fq-muted" aria-label="close">–</button>
+        <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full text-fq-muted" aria-label="close"><X size={18} /></button>
       </div>
       <div className="flex gap-1">
         {SPEEDS.map((s) => (
           <button key={s} aria-pressed={simMultiplier === s}
             onClick={() => { set({ simMultiplier: s }); session.simSet({ multiplier: s }); }}
-            className={`h-9 flex-1 border ${simMultiplier === s ? "border-fq-warn text-fq-warn" : "border-fq-line text-fq-text"}`}>
+            className={`h-11 flex-1 rounded-xl border ${simMultiplier === s ? "border-fq-warn text-fq-warn" : "border-fq-line text-fq-text"}`}>
             {s}×
           </button>
         ))}
@@ -60,10 +51,10 @@ export function SimPanel() {
       </label>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button onClick={() => { session.simSet({ paused: !simPaused }); set({ simPaused: !simPaused }); }}
-          className="h-10 border border-fq-line text-fq-strong">{simPaused ? t("sim.play") : t("sim.pause")}</button>
+          className="fq-btn">{simPaused ? t("sim.play") : t("sim.pause")}</button>
         <button disabled={!active} onClick={session.simGoOffRoute}
-          className="h-10 border border-fq-danger text-fq-danger disabled:opacity-40">{t("sim.offRoute")}</button>
-        <button onClick={() => file.current?.click()} className="col-span-2 h-10 border border-fq-line text-fq-text">
+          className="fq-btn border-fq-danger! text-fq-danger!">{t("sim.offRoute")}</button>
+        <button onClick={() => file.current?.click()} className="fq-btn col-span-2">
           {t("sim.loadGpx")}
         </button>
       </div>

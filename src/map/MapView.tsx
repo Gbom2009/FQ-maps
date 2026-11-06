@@ -11,6 +11,8 @@ import { reverse } from "../nav/geocode";
 import { translate } from "../i18n";
 import type { Route } from "../nav/valhalla";
 import { useDrive } from "../store/drive";
+import { uiPadding } from "./padding";
+import { useUi } from "../store/ui";
 import { FollowCamera } from "./followCamera";
 import { remainingShape } from "../modes/drive/session";
 import { useGigs } from "../features/gigs/store";
@@ -47,9 +49,7 @@ function stopMarkerEl(i: number, n: number): HTMLElement {
 }
 
 function fitTo(map: Map, route: Route | undefined, stops: Stop[]) {
-  const pad = window.innerWidth < 768
-    ? { top: 110, bottom: Math.round(window.innerHeight * 0.45) + 110, left: 30, right: 30 }
-    : { top: 110, bottom: 110, left: 460, right: 60 };
+  const pad = uiPadding();
   if (route) {
     const [a, b, c, d] = route.bbox;
     map.fitBounds([[a, b], [c, d]], { padding: pad, duration: 700, maxZoom: 15 });
@@ -76,9 +76,10 @@ export function MapView({ mode }: Props) {
       style: buildMapStyle(useApp.getState().theme),
       center: HOME,
       zoom: 12,
-      attributionControl: { compact: true },
+      attributionControl: false,
     });
     map.current = m;
+    m.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
     if (import.meta.env.DEV) (window as unknown as { __fqMap: Map }).__fqMap = m;
     m.on("error", (e) => console.warn("[map]", e.error?.message ?? e));
 
@@ -225,6 +226,22 @@ export function MapView({ mode }: Props) {
     const m = map.current;
     if (m?.isStyleLoaded()) syncRoutes(m);
   }, [routes, selected, active, mode]);
+
+  // Re-fit when the side panel appears or the sheet settles at a new height,
+  // so the route is never hidden behind the UI.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsub = useUi.subscribe((s, prev) => {
+      if (s.panelPx === prev.panelPx && s.sheetSnap === prev.sheetSnap) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const m = map.current;
+        const p = usePlan.getState();
+        if (m && modeRef.current === "plan" && p.routes.length) fitTo(m, p.routes[p.selected], p.stops);
+      }, 320); // after the sheet animation
+    });
+    return () => { unsub(); if (timer) clearTimeout(timer); };
+  }, []);
 
   // Fit to the route when a new set of routes arrives (Plan mode only).
   useEffect(() => {

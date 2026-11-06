@@ -9,7 +9,7 @@ import { useGigs, venueTarget, type Gig, type Venue } from "./store";
 import type { Place } from "../../nav/geocode";
 
 /** Start point for a gig: current GPS fix if we have one, else home base. */
-function origin(): Place {
+export function origin(): Place {
   const f = useDrive.getState().fix;
   const lang = useApp.getState().lang;
   if (f) return { id: "here", name: translate(lang, "drive.here"), lat: f.lat, lon: f.lon, source: "pin" };

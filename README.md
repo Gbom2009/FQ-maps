@@ -13,6 +13,25 @@ Tauri 2 + React + TypeScript + Vite + Tailwind v4 + MapLibre GL. See `CLAUDE.md`
 - Phase 5 — PHEV + extras: milieuzone alerts + EV-mode hints, charger layer, offline region packs, QR / .fqroute / .gpx
   handoff, Setlist (trip log, season stats, heatmap, Instagram story export).
 
+## Interface (v2, mobile-first)
+- **Phone:** floating search pill on top (logo · search · settings) and a draggable bottom sheet. Collapsed it shows
+  the route (time, km, arrival) with a big **Start**; drag up for stops, options, alternatives and the Gigs / Venues /
+  Setlist tabs. The first search is the destination — the route starts from your position (or home).
+- **Tablet landscape / desktop (≥ 900 px):** the same content in a side panel.
+- **Drive:** orange maneuver banner on top, round mute/recenter buttons, speed + limit bottom-left, and a bottom bar
+  with ✕ (end), arrival time and ⋯ (share ETA, next stop, map, simulator). Landscape puts the banner top-left.
+- **Settings:** full-screen page with collapsible sections and switches.
+
+## Voice
+Settings → Stem.
+- **Piper (neural):** natural Dutch voice that runs on the device (WebAssembly). Tap *Download* once
+  (voice model 63–77 MB + phonemizer 18 MB, from Hugging Face / jsDelivr); after that it works offline.
+  Upcoming instructions are pre-rendered, so they play without delay. Voices: `nl_NL-mls` (Dutch),
+  `nl_BE-nathalie` / `nl_BE-rdh` (Flemish). The ONNX runtime is bundled with the app.
+- **System voice:** instant, no download; the best installed voice is picked automatically (Natural/Enhanced first).
+  On iPhone, download *Xander/Claire (Enhanced)* under Accessibility → Spoken Content for a big quality jump.
+- If Piper can’t run (not downloaded, error), the system voice speaks — instructions are never dropped.
+
 ## Towing
 Attach a trailer in Plan → route options (or Settings → Aanhangers). Routes then use Valhalla `truck` costing with the
 combined car + trailer length/width/height/weight, so low bridges and weight limits are avoided where OSM has the data.

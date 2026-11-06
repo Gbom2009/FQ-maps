@@ -1,5 +1,6 @@
 import type { Map, GeoJSONSource } from "maplibre-gl";
 import type { LonLat } from "../nav/geo";
+import { uiPadding } from "./padding";
 
 /**
  * Heatmap of driven roads (Setlist tab): every trip track as a faint orange
@@ -22,8 +23,7 @@ export function setHeatmap(tracks: LonLat[][] | null) {
   if (map && tracks?.length) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const t of tracks) for (const [x, y] of t) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
-    const wide = window.innerWidth >= 768;
-    map.fitBounds([[minX, minY], [maxX, maxY]], { padding: wide ? { left: 460, top: 60, right: 60, bottom: 110 } : { top: 110, bottom: 420, left: 30, right: 30 }, duration: 700, maxZoom: 13 });
+    map.fitBounds([[minX, minY], [maxX, maxY]], { padding: uiPadding(), duration: 700, maxZoom: 13 });
   }
 }
 

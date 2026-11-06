@@ -1,4 +1,6 @@
+import { Check } from "lucide-react";
 import { usePlan } from "../../store/plan";
+import { Segmented } from "../../ui/controls";
 import { useT } from "../../i18n";
 import type { RouteOptions } from "../../nav/valhalla";
 import { useVehicles } from "../../features/vehicles/store";
@@ -11,30 +13,22 @@ export function RouteOptionsPanel() {
   const v = vehicles.find((x) => x.id === activeVehicleId);
   const tr = trailers.find((x) => x.id === activeTrailerId);
   const dims = v && tr ? combinedDims(v, tr) : null;
-  const sel = "h-10 w-full border border-fq-line bg-fq-surface px-2 text-[12px] text-fq-strong";
+  const sel = "fq-input text-[15px]";
   const toggles: { k: keyof RouteOptions; label: string }[] = [
     { k: "avoidMotorways", label: t("plan.opt.avoidMotorways") },
     { k: "avoidTolls", label: t("plan.opt.avoidTolls") },
     { k: "avoidFerries", label: t("plan.opt.avoidFerries") },
   ];
   return (
-    <div className="space-y-2">
-      <div className="flex gap-2">
-        {([false, true] as const).map((short) => (
-          <button key={String(short)} aria-pressed={options.shortest === short}
-            onClick={() => setOption("shortest", short)}
-            className="fq-bracket h-10 flex-1 text-[12px]">
-            {short ? t("plan.opt.shortest") : t("plan.opt.fastest")}
-          </button>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1">
+    <div className="space-y-3">
+      <span className="fq-label">{t("plan.options")}</span>
+      <Segmented value={options.shortest ? "short" : "fast"} onChange={(v) => setOption("shortest", v === "short")}
+        options={[{ v: "fast", label: t("plan.opt.fastest") }, { v: "short", label: t("plan.opt.shortest") }]} />
+      <div className="flex flex-wrap gap-2">
         {toggles.map(({ k, label }) => (
-          <label key={k} className="flex min-h-9 items-center gap-2 text-[12px] text-fq-text">
-            <input type="checkbox" checked={options[k] as boolean} onChange={(e) => setOption(k, e.target.checked)}
-              className="h-4 w-4 accent-[var(--fq-primary)]" />
-            {label}
-          </label>
+          <button key={k} aria-pressed={options[k] as boolean} onClick={() => setOption(k, !options[k])} className="fq-chip">
+            {options[k] && <Check size={16} />} {label}
+          </button>
         ))}
       </div>
       <div className="grid grid-cols-2 gap-2">

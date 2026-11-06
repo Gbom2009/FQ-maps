@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { ArrowUpDown, GripVertical, Trash2, X } from "lucide-react";
 import { usePlan } from "../../store/plan";
 import { useT } from "../../i18n";
 
@@ -25,17 +26,17 @@ export function StopList() {
 
   return (
     <div>
-      <ol ref={list} className="relative">
+      <ol ref={list} className="fq-card relative overflow-hidden">
         {stops.map((s, i) => {
           const dragging = drag?.from === i;
           const label = i === 0 ? "A" : i === stops.length - 1 ? "▼" : String(i);
           return (
             <li key={s.key}
               style={dragging ? { transform: `translateY(${drag.dy}px)`, zIndex: 10 } : undefined}
-              className={`relative flex items-center gap-2 border-b border-fq-line bg-fq-bg py-1.5 ${dragging ? "opacity-90 shadow-lg" : ""} ${drag && drag.over === i && !dragging ? "border-t-2 border-t-fq-primary" : ""}`}>
+              className={`relative flex min-h-14 items-center gap-2 border-b border-fq-line bg-fq-surface px-1 last:border-b-0 ${dragging ? "opacity-90 shadow-lg" : ""} ${drag && drag.over === i && !dragging ? "border-t-2 border-t-fq-primary" : ""}`}>
               <button
                 aria-label={t("plan.dragStop")}
-                className="flex h-11 w-9 shrink-0 cursor-grab touch-none items-center justify-center text-lg text-fq-muted active:cursor-grabbing"
+                className="flex h-12 w-10 shrink-0 cursor-grab touch-none items-center justify-center text-fq-muted active:cursor-grabbing"
                 onPointerDown={(e) => {
                   (e.target as HTMLElement).setPointerCapture(e.pointerId);
                   setDrag({ from: i, over: i, dy: 0, y0: e.clientY });
@@ -50,8 +51,8 @@ export function StopList() {
                   if (e.key === "ArrowUp") { e.preventDefault(); moveStop(i, i - 1); }
                   if (e.key === "ArrowDown") { e.preventDefault(); moveStop(i, i + 1); }
                 }}
-              >≡</button>
-              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] ${i === stops.length - 1 && i > 0 ? "bg-fq-primary text-[#040404]" : i === 0 ? "bg-fq-strong text-fq-bg" : "border border-fq-strong text-fq-strong"}`}>
+              ><GripVertical size={20} /></button>
+              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] ${i === stops.length - 1 && i > 0 ? "bg-fq-primary text-[#040404]" : i === 0 ? "bg-fq-strong text-fq-bg" : "border border-fq-strong text-fq-strong"}`}>
                 {label}
               </span>
               <div className="min-w-0 flex-1">
@@ -59,14 +60,14 @@ export function StopList() {
                 {s.detail && <div className="truncate text-[11px] text-fq-muted">{s.detail}</div>}
               </div>
               <button onClick={() => removeStop(s.key)} aria-label={t("plan.removeStop")}
-                className="h-11 w-10 shrink-0 text-fq-muted hover:text-fq-danger">×</button>
+                className="flex h-12 w-12 shrink-0 items-center justify-center text-fq-muted hover:text-fq-danger"><X size={20} /></button>
             </li>
           );
         })}
       </ol>
-      <div className="mt-2 flex gap-4 text-[12px]">
-        {stops.length >= 2 && <button onClick={reverseStops} className="py-2 text-fq-muted hover:text-fq-strong">⇅ {t("plan.reverse")}</button>}
-        <button onClick={clearStops} className="py-2 text-fq-muted hover:text-fq-danger">{t("plan.clear")}</button>
+      <div className="mt-2 flex gap-2">
+        {stops.length >= 2 && <button onClick={reverseStops} className="fq-chip"><ArrowUpDown size={16} /> {t("plan.reverse")}</button>}
+        <button onClick={clearStops} className="fq-chip text-fq-muted!"><Trash2 size={16} /> {t("plan.clear")}</button>
       </div>
     </div>
   );

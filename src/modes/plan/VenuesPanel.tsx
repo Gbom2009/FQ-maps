@@ -3,8 +3,8 @@ import { useGigs, type Venue, type PinField } from "../../features/gigs/store";
 import { SearchBox } from "./SearchBox";
 import { useT } from "../../i18n";
 
-const field = "h-10 w-full border border-fq-line bg-fq-surface px-2 text-sm text-fq-strong select-text";
-const label = "block text-[11px] uppercase tracking-widest text-fq-muted";
+const field = "fq-input";
+const label = "fq-label";
 const MAX_PHOTOS = 4;
 
 /** Downscale a photo to ≤ 900 px JPEG so venue cards stay small in storage. */
@@ -35,7 +35,7 @@ function VenueEditor({ venue, onClose }: { venue: Venue; onClose: () => void }) 
           <div className="text-fq-strong">{name}</div>
           <div className="text-[11px] text-fq-muted">{pin ? `${pin.lat.toFixed(5)}, ${pin.lon.toFixed(5)}` : t("venue.notSet")}</div>
         </div>
-        <button onClick={() => startPicking(venue.id, f)} aria-pressed={active} className="fq-bracket h-9 px-2 text-[11px]">
+        <button onClick={() => startPicking(venue.id, f)} aria-pressed={active} className="fq-btn h-9 px-2 text-[11px]">
           {active ? t("venue.tapMap") : t("venue.pick")}
         </button>
         {pin && <button onClick={() => up({ [f]: undefined })} className="h-9 w-7 text-fq-muted hover:text-fq-danger" aria-label="clear">×</button>}
@@ -62,7 +62,7 @@ function VenueEditor({ venue, onClose }: { venue: Venue; onClose: () => void }) 
       </div>
       {venue.contactPhone && <a href={`tel:${venue.contactPhone.replace(/\s/g, "")}`} className="text-[12px] text-fq-primary">📞 {venue.contactPhone}</a>}
       <label><span className={label}>{t("venue.notes")}</span>
-        <textarea rows={3} className={`${field} h-auto py-1`} value={venue.notes ?? ""} onChange={(e) => up({ notes: e.target.value })} /></label>
+        <textarea rows={3} className={field} value={venue.notes ?? ""} onChange={(e) => up({ notes: e.target.value })} /></label>
       <div>
         <span className={label}>{t("venue.photos")}</span>
         <div className="mt-1 flex flex-wrap gap-2">
@@ -89,7 +89,7 @@ function VenueEditor({ venue, onClose }: { venue: Venue; onClose: () => void }) 
         {photoMsg && <div className="text-[11px] text-fq-danger">{photoMsg}</div>}
       </div>
       <div className="flex gap-2">
-        <button onClick={onClose} className="fq-bracket h-10 flex-1 text-[12px]">{t("gig.done")}</button>
+        <button onClick={onClose} className="fq-btn h-10 flex-1 text-[12px]">{t("gig.done")}</button>
         <button onClick={() => { removeVenue(venue.id); onClose(); }} className="h-10 px-3 text-[12px] text-fq-muted hover:text-fq-danger">{t("venue.delete")}</button>
       </div>
     </div>
@@ -108,7 +108,7 @@ export function VenuesPanel() {
       {venues.map((v) => open === v.id ? (
         <VenueEditor key={v.id} venue={v} onClose={() => setOpen(null)} />
       ) : (
-        <button key={v.id} onClick={() => setOpen(v.id)} className="flex w-full items-center gap-3 border border-fq-line p-3 text-left hover:border-fq-muted">
+        <button key={v.id} onClick={() => setOpen(v.id)} className="flex w-full items-center gap-3 fq-card p-3 text-left hover:border-fq-muted">
           {v.photos[0] ? <img src={v.photos[0]} alt="" className="h-12 w-12 object-cover" /> : <span className="h-12 w-12 shrink-0 bg-fq-surface" />}
           <div className="min-w-0">
             <div className="truncate text-sm text-fq-strong">{v.name}</div>
@@ -120,7 +120,7 @@ export function VenuesPanel() {
         </button>
       ))}
       {!venues.length && <p className="text-[13px] text-fq-muted">{t("venue.empty")}</p>}
-      <button onClick={() => setOpen(addVenue({ name: t("venue.new") }))} className="fq-bracket h-12 w-full text-sm">+ {t("venue.add")}</button>
+      <button onClick={() => setOpen(addVenue({ name: t("venue.new") }))} className="fq-btn h-12 w-full text-sm">+ {t("venue.add")}</button>
     </div>
   );
 }

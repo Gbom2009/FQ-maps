@@ -64,7 +64,7 @@ export function SetlistPanel() {
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <select value={year} onChange={(e) => setYear(Number(e.target.value))}
-          className="h-10 border border-fq-line bg-fq-surface px-2 text-sm text-fq-strong">
+          className="fq-input w-auto">
           {years.map((y) => <option key={y} value={y}>{t("stats.season")} {y}</option>)}
         </select>
         <label className="ml-auto flex items-center gap-2 text-[11px] text-fq-muted">
@@ -80,7 +80,7 @@ export function SetlistPanel() {
         {cell(stats.trips, t("stats.trips"))}
         {cell(`${stats.hours} u`, t("stats.hours"))}
       </div>
-      <button disabled={busy} onClick={exportStory} className="fq-bracket h-12 w-full bg-fq-primary text-sm uppercase tracking-widest text-[#040404]! disabled:opacity-50">
+      <button disabled={busy} onClick={exportStory} className="fq-btn fq-btn-primary h-14 w-full">
         {busy ? "…" : t("stats.story")}
       </button>
       {msg && <div className="text-[11px] text-fq-danger">{msg}</div>}

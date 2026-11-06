@@ -2,8 +2,8 @@ import { useVehicles } from "../../features/vehicles/store";
 import { NL_TOW_DEFAULTS, type Trailer, type Vehicle } from "../../features/vehicles/profiles";
 import { useT } from "../../i18n";
 
-const num = "h-10 w-full border border-fq-line bg-fq-surface px-2 text-sm text-fq-strong select-text";
-const lbl = "block text-[10px] uppercase tracking-widest text-fq-muted";
+const num = "fq-input";
+const lbl = "fq-label";
 
 /** Number input that stores undefined when cleared. */
 function NumField({ label, value, step, onChange }: { label: string; value?: number; step: number; onChange: (v?: number) => void }) {
@@ -35,13 +35,13 @@ export function VehiclesSettings() {
   return (
     <div className="space-y-6">
       <div>
-        <div className="mb-2 text-[11px] uppercase tracking-widest text-fq-muted">{t("vehicle.vehicles")}</div>
+        <div className="fq-label">{t("vehicle.vehicles")}</div>
         <div className="space-y-3">
           {s.vehicles.map((v) => (
-            <div key={v.id} className={`border p-3 ${v.id === s.activeVehicleId ? "border-fq-primary" : "border-fq-line"}`}>
+            <div key={v.id} className={`fq-card p-3 ${v.id === s.activeVehicleId ? "border-fq-primary" : "border-fq-line"}`}>
               <div className="mb-2 flex items-center gap-2">
                 <input className={`${num} flex-1`} value={v.name} onChange={(e) => s.updateVehicle(v.id, { name: e.target.value })} />
-                <button aria-pressed={v.id === s.activeVehicleId} onClick={() => s.setActiveVehicle(v.id)} className="fq-bracket h-10 px-3 text-[12px]">
+                <button aria-pressed={v.id === s.activeVehicleId} onClick={() => s.setActiveVehicle(v.id)} className="fq-btn h-10 px-3 text-[12px]">
                   {v.id === s.activeVehicleId ? t("vehicle.active") : t("vehicle.use")}
                 </button>
                 {s.vehicles.length > 1 && <button onClick={() => s.removeVehicle(v.id)} className="h-10 w-8 text-fq-muted hover:text-fq-danger" aria-label="remove">×</button>}
@@ -50,19 +50,19 @@ export function VehiclesSettings() {
                 extra={<NumField label={`${t("vehicle.evRange")} (km)`} step={1} value={v.evRangeKm} onChange={(x) => s.updateVehicle(v.id, { evRangeKm: x })} />} />
             </div>
           ))}
-          <button onClick={s.addVehicle} className="fq-bracket h-10 px-4 text-[12px]">+ {t("vehicle.add")}</button>
+          <button onClick={s.addVehicle} className="fq-btn h-10 px-4 text-[12px]">+ {t("vehicle.add")}</button>
         </div>
       </div>
 
       <div>
-        <div className="mb-2 text-[11px] uppercase tracking-widest text-fq-muted">{t("vehicle.trailers")}</div>
+        <div className="fq-label">{t("vehicle.trailers")}</div>
         <div className="space-y-3">
           {s.trailers.map((tr) => (
-            <div key={tr.id} className={`border p-3 ${tr.id === s.activeTrailerId ? "border-fq-primary" : "border-fq-line"}`}>
+            <div key={tr.id} className={`fq-card p-3 ${tr.id === s.activeTrailerId ? "border-fq-primary" : "border-fq-line"}`}>
               <div className="mb-2 flex items-center gap-2">
                 <input className={`${num} flex-1`} value={tr.name} onChange={(e) => s.updateTrailer(tr.id, { name: e.target.value })} />
                 <button aria-pressed={tr.id === s.activeTrailerId} onClick={() => s.setActiveTrailer(tr.id === s.activeTrailerId ? null : tr.id)}
-                  className="fq-bracket h-10 px-3 text-[12px]">
+                  className="fq-btn h-10 px-3 text-[12px]">
                   {tr.id === s.activeTrailerId ? t("vehicle.attached") : t("vehicle.attach")}
                 </button>
                 <button onClick={() => s.removeTrailer(tr.id)} className="h-10 w-8 text-fq-muted hover:text-fq-danger" aria-label="remove">×</button>
@@ -71,12 +71,12 @@ export function VehiclesSettings() {
               <p className="mt-1 text-[10px] text-fq-muted">{t("vehicle.trailerHint")}</p>
             </div>
           ))}
-          <button onClick={s.addTrailer} className="fq-bracket h-10 px-4 text-[12px]">+ {t("vehicle.addTrailer")}</button>
+          <button onClick={s.addTrailer} className="fq-btn h-10 px-4 text-[12px]">+ {t("vehicle.addTrailer")}</button>
         </div>
       </div>
 
       <div>
-        <div className="mb-2 text-[11px] uppercase tracking-widest text-fq-muted">{t("tow.caps")}</div>
+        <div className="fq-label">{t("tow.caps")}</div>
         <div className="grid grid-cols-3 gap-2">
           <NumField label={t("tow.motorway")} step={5} value={s.towCaps.motorway} onChange={(v) => s.setTowCaps({ motorway: v ?? NL_TOW_DEFAULTS.motorway })} />
           <NumField label={t("tow.rural")} step={5} value={s.towCaps.rural} onChange={(v) => s.setTowCaps({ rural: v ?? NL_TOW_DEFAULTS.rural })} />

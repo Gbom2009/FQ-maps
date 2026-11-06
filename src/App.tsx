@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
+import { AlarmClock, X } from "lucide-react";
 import { MapView } from "./map/MapView";
 import { PlanMode } from "./modes/plan/PlanMode";
 import { DriveMode } from "./modes/drive/DriveMode";
 import { SettingsMode } from "./modes/settings/SettingsMode";
 import { Splash } from "./Splash";
-import { useApp, type Mode } from "./store/app";
+import { useApp } from "./store/app";
 import { usePlan } from "./store/plan";
 import { useDrive } from "./store/drive";
-import { useT } from "./i18n";
 import * as session from "./modes/drive/session";
 import { keepAwake } from "./location/wakeLock";
 import { isNight } from "./theme/sun";
@@ -17,14 +17,11 @@ import { setReminderBanner, startReminders } from "./features/gigs/reminders";
 // Leave-by reminders run for the app lifetime.
 startReminders();
 
-const MODES: Mode[] = ["plan", "drive", "settings"];
-
 export default function App() {
   const { mode, setMode, theme, setTheme, autoTheme, lang } = useApp();
   const active = usePlan((s) => s.active);
   const locked = useDrive((s) => s.locked);
   const source = useDrive((s) => s.source);
-  const t = useT();
   const [splash, setSplash] = useState(true);
   const [reminder, setReminder] = useState<string | null>(null);
   useEffect(() => { setReminderBanner(setReminder); return () => setReminderBanner(() => {}); }, []);
@@ -73,32 +70,19 @@ export default function App() {
   }, [autoTheme, setTheme]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <div className={`relative h-full w-full overflow-hidden fq-mode-${mode}`}>
       <MapView mode={mode === "drive" ? "drive" : "plan"} />
       <div className="pointer-events-none absolute inset-0">
-        {mode === "plan" && <PlanMode />}
+        {(mode === "plan" || mode === "settings") && <PlanMode />}
         {mode === "drive" && <DriveMode />}
         {mode === "settings" && <SettingsMode />}
       </div>
 
-      <nav className="absolute inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] flex border border-fq-line bg-fq-bg/90 backdrop-blur">
-        {MODES.map((m) => {
-          const disabled = locked && m !== "drive";
-          return (
-            <button key={m} aria-pressed={mode === m} disabled={disabled} onClick={() => setMode(m)}
-              title={disabled ? t("drive.lockedMsg") : undefined}
-              className="fq-bracket h-16 flex-1 text-sm uppercase tracking-widest disabled:opacity-30">
-              {disabled ? "🔒 " : ""}{t(`mode.${m}`)}
-            </button>
-          );
-        })}
-      </nav>
-
       {reminder && (
-        <div role="alert" className="absolute inset-x-4 top-[max(1rem,env(safe-area-inset-top))] z-40 mx-auto flex max-w-lg items-center gap-3 border border-fq-primary bg-fq-bg/95 px-4 py-3 text-fq-strong">
-          <span className="text-2xl">⏰</span>
-          <span className="flex-1 text-sm">{reminder}</span>
-          <button onClick={() => setReminder(null)} className="h-11 w-11 text-fq-muted" aria-label="close">×</button>
+        <div role="alert" className="fq-floating absolute inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 mx-auto flex max-w-lg items-center gap-3 rounded-2xl border-fq-primary! px-4 py-3 text-fq-strong">
+          <AlarmClock size={26} className="shrink-0 text-fq-primary" />
+          <span className="flex-1 text-[15px]">{reminder}</span>
+          <button onClick={() => setReminder(null)} className="flex h-11 w-11 items-center justify-center text-fq-muted" aria-label="close"><X size={20} /></button>
         </div>
       )}
       {splash && <Splash />}
