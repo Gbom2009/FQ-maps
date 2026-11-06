@@ -1,5 +1,6 @@
 import type { Map, ExpressionSpecification } from "maplibre-gl";
 import { PULSE_LAYER } from "./routeLayers";
+import { useMapSettings } from "./settings";
 
 /**
  * "Waveform route": bright pulses travel along the selected route like a beat.
@@ -67,7 +68,7 @@ export function startWaveform(map: Map): () => void {
     if (now - lastFrame < 33) return; // ~30 fps is plenty
     lastFrame = now;
     if (!map.getLayer(PULSE_LAYER) || document.visibilityState !== "visible") return;
-    if (reduce?.matches) {
+    if (reduce?.matches || !useMapSettings.getState().pulse) {
       map.setPaintProperty(PULSE_LAYER, "line-opacity", 0);
       return;
     }

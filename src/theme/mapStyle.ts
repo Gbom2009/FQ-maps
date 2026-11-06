@@ -32,6 +32,7 @@ const palettes: Record<MapTheme, Palette> = {
 };
 
 const FONT_REG = ["Noto Sans Regular"];
+const POI_CLASSES = ["fuel", "parking", "hospital", "police", "toilets", "grocery", "shop", "fast_food", "cafe", "restaurant", "pharmacy", "car"];
 const FONT_BOLD = ["Noto Sans Bold"];
 
 const zoomWidth = (base: number): ExpressionSpecification =>
@@ -86,6 +87,22 @@ export function buildMapStyle(theme: MapTheme, opts: StyleOptions = {}): StyleSp
     { id: "water-label", type: "symbol", source: "omt", "source-layer": "water_name",
       layout: { "text-field": ["coalesce", ["get", "name:nl"], ["get", "name"]], "text-font": FONT_REG, "text-size": 12 },
       paint: { "text-color": p.waterLabel, "text-halo-color": p.labelHalo, "text-halo-width": 1 } },
+    // 3D buildings (off by default; Settings → Kaart)
+    { id: "building-3d", type: "fill-extrusion", source: "omt", "source-layer": "building", minzoom: 15,
+      layout: { visibility: "none" },
+      paint: {
+        "fill-extrusion-color": p.building,
+        "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6],
+        "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+        "fill-extrusion-opacity": 0.85,
+      } },
+    // one-way arrows along the street (OMT: oneway = 1 forward, -1 against the way)
+    { id: "oneway", type: "symbol", source: "omt", "source-layer": "transportation", minzoom: 15,
+      filter: ["all", ["in", ["get", "oneway"], ["literal", [1, -1]]], ["!", ["in", ["get", "class"], ["literal", ["motorway", "trunk"]]]]],
+      layout: {
+        "symbol-placement": "line", "symbol-spacing": 120, "icon-image": "fq-oneway", "icon-size": 0.55,
+        "icon-rotate": ["match", ["get", "oneway"], -1, 180, 0], "icon-rotation-alignment": "map", "icon-allow-overlap": true,
+      } },
     { id: "road-label", type: "symbol", source: "omt", "source-layer": "transportation_name", minzoom: 13,
       layout: { "symbol-placement": "line", "text-field": ["get", "name"], "text-font": FONT_REG,
         "text-size": ["interpolate", ["linear"], ["zoom"], 13, 11, 18, 15] },
@@ -95,6 +112,24 @@ export function buildMapStyle(theme: MapTheme, opts: StyleOptions = {}): StyleSp
       layout: { "symbol-placement": "line", "symbol-spacing": 400, "text-field": ["get", "ref"],
         "text-font": FONT_BOLD, "text-size": 11, "text-rotation-alignment": "viewport" },
       paint: { "text-color": p.label, "text-halo-color": p.labelHalo, "text-halo-width": 2 } },
+    { id: "housenumber", type: "symbol", source: "omt", "source-layer": "housenumber", minzoom: 17,
+      layout: { "text-field": ["get", "housenumber"], "text-font": FONT_REG, "text-size": 10 },
+      paint: { "text-color": p.roadLabel, "text-halo-color": p.labelHalo, "text-halo-width": 1 } },
+    // useful places on the road: fuel, parking, hospital, police, toilets, food shops
+    { id: "poi-dot", type: "circle", source: "omt", "source-layer": "poi", minzoom: 14,
+      filter: ["in", ["get", "class"], ["literal", POI_CLASSES]],
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, 3, 18, 6],
+        "circle-color": ["match", ["get", "class"], "fuel", "#f68712", "parking", "#3b82f6", "hospital", "#e3262b", "police", "#3b82f6", "#8d8d8d"],
+        "circle-stroke-color": p.labelHalo, "circle-stroke-width": 1.5,
+      } },
+    { id: "poi-label", type: "symbol", source: "omt", "source-layer": "poi", minzoom: 15,
+      filter: ["in", ["get", "class"], ["literal", POI_CLASSES]],
+      layout: {
+        "text-field": ["coalesce", ["get", "name:nl"], ["get", "name"], ["match", ["get", "class"], "fuel", "Tank", "parking", "P", ""]],
+        "text-font": FONT_REG, "text-size": 11, "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true,
+      },
+      paint: { "text-color": p.label, "text-halo-color": p.labelHalo, "text-halo-width": 1.2 } },
     { id: "place-label", type: "symbol", source: "omt", "source-layer": "place",
       filter: ["in", ["get", "class"], ["literal", ["city", "town", "village", "suburb"]]],
       layout: {

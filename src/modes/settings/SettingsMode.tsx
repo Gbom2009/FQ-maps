@@ -1,4 +1,4 @@
-import { ChevronLeft, Car, FlaskConical, HardDriveDownload, Palette, Volume2, Zap } from "lucide-react";
+import { ChevronLeft, Car, FlaskConical, HardDriveDownload, Layers, MessageSquareText, Palette, Volume2, Zap } from "lucide-react";
 import { useApp } from "../../store/app";
 import { useT } from "../../i18n";
 import { useDrive } from "../../store/drive";
@@ -8,6 +8,8 @@ import { Section, Segmented, Toggle } from "../../ui/controls";
 import { VehiclesSettings } from "./VehiclesSettings";
 import { OfflineSettings, PhevSettings } from "./PhevOfflineSettings";
 import { VoiceSettings } from "./VoiceSettings";
+import { GuidanceSettings, MapDisplaySettings } from "./GuidanceSettings";
+import { useGuidance } from "../../nav/narration/settings";
 
 /** Settings: full-screen page on phones, centred column on wide screens. */
 export function SettingsMode() {
@@ -17,6 +19,7 @@ export function SettingsMode() {
   const vehicle = useVehicles((s) => s.vehicles.find((v) => v.id === s.activeVehicleId));
   const trailer = useVehicles((s) => s.trailers.find((x) => x.id === s.activeTrailerId));
   const engine = useVoice((s) => s.engine);
+  const level = useGuidance((s) => s.level);
 
   return (
     <div className="pointer-events-auto absolute inset-0 z-40 overflow-y-auto bg-fq-bg">
@@ -41,6 +44,14 @@ export function SettingsMode() {
               options={[{ v: "night", label: t("settings.theme.night") }, { v: "day", label: t("settings.theme.day") }]} />
             <Toggle checked={autoTheme} onChange={setAutoTheme} label={t("settings.autoTheme")} />
           </div>
+        </Section>
+
+        <Section icon={<MessageSquareText size={20} />} title={t("guide.title")} summary={t(`guide.levelName.${level}` as never)}>
+          <GuidanceSettings />
+        </Section>
+
+        <Section icon={<Layers size={20} />} title={t("map.title")} summary={t("map.summary")}>
+          <MapDisplaySettings />
         </Section>
 
         <Section icon={<Volume2 size={20} />} title={t("voice.title")}

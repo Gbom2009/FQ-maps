@@ -19,6 +19,8 @@ import { useGigs } from "../features/gigs/store";
 import { setWaveformMode, startWaveform } from "./waveformRoute";
 import { attachPhevLayers } from "./phevLayers";
 import { bindHeatmap } from "./heatmap";
+import { attachDetailLayers } from "./detailLayers";
+import { useMapSettings } from "./settings";
 import { openPack, useOffline, wantsPack } from "../features/offline/packs";
 type Map = maplibregl.Map;
 
@@ -183,8 +185,9 @@ export function MapView({ mode }: Props) {
     const stopWave = startWaveform(m);
     const detachPhev = attachPhevLayers(m);
     bindHeatmap(m);
+    const detachDetails = attachDetailLayers(m);
 
-    return () => { detachPhev(); stopWave(); unsubGigs(); venueMarkers.forEach((x) => x.remove()); unsub(); offLong(); markers.current.forEach((mk) => mk.remove()); m.remove(); map.current = null; };
+    return () => { detachDetails(); detachPhev(); stopWave(); unsubGigs(); venueMarkers.forEach((x) => x.remove()); unsub(); offLong(); markers.current.forEach((mk) => mk.remove()); m.remove(); map.current = null; };
   }, []);
 
   // ---- theme + tile source (online / offline pack) --------------------------
@@ -278,7 +281,7 @@ export function MapView({ mode }: Props) {
     if (!m) return;
     if (mode === "drive") {
       const start = usePlan.getState().active?.route.shape[0];
-      m.easeTo({ pitch: 55, zoom: 15.5, duration: 800, ...(start ? { center: start } : {}) });
+      m.easeTo({ pitch: useMapSettings.getState().tilt, zoom: 15.5, duration: 800, ...(start ? { center: start } : {}) });
     } else {
       m.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 800 });
     }

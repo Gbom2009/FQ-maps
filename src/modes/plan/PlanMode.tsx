@@ -19,6 +19,7 @@ import { GigsPanel } from "./GigsPanel";
 import { VenuesPanel } from "./VenuesPanel";
 import { SetlistPanel } from "./SetlistPanel";
 import { HandoffPanel } from "./HandoffPanel";
+import { RouteInsights } from "./RouteInsights";
 
 type Tab = "route" | "gigs" | "venues" | "setlist";
 const TABS: { k: Tab; icon: typeof RouteIcon }[] = [
@@ -121,6 +122,7 @@ function TabContent({ tab, setTab, wide }: { tab: Tab; setTab: (t: Tab) => void;
           <StopList />
           <RouteOptionsPanel />
           <Alternatives showStart={wide} />
+          <RouteInsights />
           <HandoffPanel />
         </>
       )}
