@@ -2,6 +2,7 @@ import * as maplibregl from "maplibre-gl";
 import { PMTiles, Protocol, FileSource } from "pmtiles";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "../../store/storage";
 
 /**
  * Offline region packs: PMTiles files in the OpenMapTiles schema (same schema
@@ -38,7 +39,7 @@ export const useOffline = create<OfflineState>()(
       set: (p) => set(p),
       _setPacks: (packs) => set({ packs }),
     }),
-    { name: "fq-offline" },
+    { name: "fq-offline", storage: lazyStorage },
   ),
 );
 

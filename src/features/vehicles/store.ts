@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "../../store/storage";
 import {
   DEFAULT_TRAILERS, DEFAULT_VEHICLES, NL_TOW_DEFAULTS, combinedDims,
   type Trailer, type TowCaps, type Vehicle, type TruckDims, type Licence,
@@ -57,7 +58,7 @@ export const useVehicles = create<VehicleState>()(
       setTowCaps: (c) => set({ towCaps: { ...get().towCaps, ...c } }),
     }),
     {
-      name: "fq-vehicles",
+      name: "fq-vehicles", storage: lazyStorage,
       version: 2,
       migrate: (state) => {
         const st = state as VehicleState;

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "../../store/storage";
 import type { Place } from "../../nav/geocode";
 
 export interface Pin { lat: number; lon: number }
@@ -95,7 +96,7 @@ export const useGigs = create<GigState>()(
         set({ picking: null });
       },
     }),
-    { name: "fq-gigs", partialize: ({ venues, gigs }) => ({ venues, gigs }) },
+    { name: "fq-gigs", storage: lazyStorage, partialize: ({ venues, gigs }) => ({ venues, gigs }) },
   ),
 );
 

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "../store/storage";
 
 /** What the map shows and how the drive camera behaves — all user-tweakable. */
 export interface MapSettings {
@@ -45,6 +46,6 @@ export const useMapSettings = create<MapSettings>()(
       bannerSize: "normal",
       set: (p) => set(p),
     }),
-    { name: "fq-map-settings" },
+    { name: "fq-map-settings", storage: lazyStorage },
   ),
 );

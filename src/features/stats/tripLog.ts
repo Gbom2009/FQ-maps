@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "../../store/storage";
 
 /** One driven trip. Recorded by the drive session; the Setlist screen (Phase 5) reads it. */
 export interface Trip {
@@ -29,7 +30,7 @@ export const useTrips = create<TripState>()(
       add: (t) => set({ trips: [t, ...get().trips].slice(0, 2000) }),
       remove: (id) => { set({ trips: get().trips.filter((t) => t.id !== id) }); void import("./tracks").then((m) => m.deleteTrack(id)); },
     }),
-    { name: "fq-trips" },
+    { name: "fq-trips", storage: lazyStorage },
   ),
 );
 

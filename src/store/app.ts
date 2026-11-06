@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "./storage";
 import type { MapTheme } from "../theme/mapStyle";
 import type { Lang } from "../i18n";
 
@@ -30,6 +31,6 @@ export const useApp = create<AppState>()(
       setTheme: (theme) => set({ theme }),
       setAutoTheme: (autoTheme) => set({ autoTheme }),
     }),
-    { name: "fq-app", partialize: ({ lang, theme, autoTheme }) => ({ lang, theme, autoTheme }) },
+    { name: "fq-app", storage: lazyStorage, partialize: ({ lang, theme, autoTheme }) => ({ lang, theme, autoTheme }) },
   ),
 );

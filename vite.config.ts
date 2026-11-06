@@ -8,6 +8,7 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  worker: { format: "es" },
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   // MapLibre 6 resolves its worker relative to its own module; pre-bundling breaks that.
   optimizeDeps: { exclude: ["maplibre-gl"] },

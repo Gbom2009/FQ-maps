@@ -136,14 +136,17 @@ export function MapView({ mode }: Props) {
     m.on("dragstart", userMoved);
     m.on("rotatestart", userMoved);
     let lastTrim = 0;
+    let lastTrimAlong = -1e9;
     const unsub = useDrive.subscribe((s, prev) => {
       if (s.fix === prev.fix && s.follow === prev.follow) return;
       if (!s.fix) { cam.clear(); return; }
       cam.update(s.fix, s.guidance, s.follow && modeRef.current === "drive");
       // redraw only the part of the route still ahead, at most once a second
       const now = performance.now();
-      if (modeRef.current === "drive" && s.guidance && now - lastTrim > 1000 && m.isStyleLoaded()) {
+      // re-cut the remaining route only every ~150 m: each setData re-tiles the whole line
+      if (modeRef.current === "drive" && s.guidance && now - lastTrim > 1000 && Math.abs(s.guidance.along - lastTrimAlong) > 150 && m.isStyleLoaded()) {
         lastTrim = now;
+        lastTrimAlong = s.guidance.along;
         const rest = remainingShape();
         const r = usePlan.getState().active?.route;
         if (rest && r && rest.length > 1) setRoutes(m, [{ ...r, shape: rest }], 0);

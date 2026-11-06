@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "../../store/storage";
 
 export type Connector = "any" | "type2" | "ccs";
 
@@ -28,6 +29,6 @@ export const usePhev = create<PhevState>()(
       chargerConnector: "any",
       set: (p) => set(p),
     }),
-    { name: "fq-phev" },
+    { name: "fq-phev", storage: lazyStorage },
   ),
 );

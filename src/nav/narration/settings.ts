@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "../../store/storage";
 
 /**
  * How much the voice tells you. Four levels; every topic can also be switched
@@ -60,7 +61,7 @@ export const useGuidance = create<GuidanceState>()(
         set({ overrides: o });
       },
     }),
-    { name: "fq-guidance" },
+    { name: "fq-guidance", storage: lazyStorage },
   ),
 );
 

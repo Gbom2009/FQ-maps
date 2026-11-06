@@ -21,7 +21,7 @@ const RUNTIME = {
 };
 const CACHE = "fq-tts-runtime-v1";
 
-type Session = { predict(text: string): Promise<Blob> };
+type Session = { predict(text: string, urgent?: boolean): Promise<Blob> };
 
 /**
  * Voices newer than the library’s built-in list live in the official
@@ -151,19 +151,14 @@ export function loadSession(voiceId: PiperVoiceId): Promise<Session> {
   loading = (async () => {
     await registerExtraVoices();
     if (!(await runtimeCached()) && !navigator.onLine) throw new Error("offline: runtime not downloaded");
-    const [{ TtsSession }, piperWasm, piperData] = await Promise.all([
-      import("@mintplex-labs/piper-tts-web"),
-      cachedUrl(RUNTIME.piperWasm), cachedUrl(RUNTIME.piperData),
-    ]);
+    const [piperWasm, piperData] = await Promise.all([cachedUrl(RUNTIME.piperWasm), cachedUrl(RUNTIME.piperData)]);
     const ortWasm = new URL(ortWasmUrl, location.href).href;
     await fixStoredConfig(voiceId);
-    // the library keeps a singleton; drop it so a different voice really loads
-    (TtsSession as unknown as { _instance: unknown })._instance = null;
-    const s = await TtsSession.create({
-      voiceId,
-      // onnxWasm accepts ORT's { wasm } form: point straight at our cached copy
-      wasmPaths: { onnxWasm: { wasm: ortWasm } as unknown as string, piperWasm, piperData },
-    });
+    const lib = await import("@mintplex-labs/piper-tts-web");
+    const extraPaths: Record<string, string> = {};
+    for (const v of PIPER_VOICES) if (v.extra) extraPaths[v.id] = (lib.PATH_MAP as Record<string, string>)[v.id];
+    // inference runs in a worker so the map and HUD never freeze while a sentence is synthesised
+    const s = await workerSession(voiceId, extraPaths, { onnxWasm: { wasm: ortWasm }, piperWasm, piperData });
     session = s;
     useVoice.getState().set({ status: "ready" });
     return s;
@@ -175,28 +170,82 @@ export function loadSession(voiceId: PiperVoiceId): Promise<Session> {
   return loading;
 }
 
+// --- worker client: one job at a time, urgent jobs first ----------------------
+let worker: Worker | null = null;
+let busy = false;
+let nextId = 1;
+const pending = new Map<number, { resolve: (b: Blob) => void; reject: (e: Error) => void }>();
+const urgentQ: { id: number; text: string }[] = [];
+const backgroundQ: { id: number; text: string }[] = [];
+
+function pumpWorker() {
+  if (!worker || busy) return;
+  const job = urgentQ.shift() ?? backgroundQ.shift();
+  if (!job) return;
+  busy = true;
+  worker.postMessage({ type: "predict", id: job.id, text: job.text });
+}
+
+function workerSession(voiceId: string, extraPaths: Record<string, string>, wasmPaths: unknown): Promise<Session> {
+  worker?.terminate();
+  worker = new Worker(new URL("./piper.worker.ts", import.meta.url), { type: "module" });
+  busy = false;
+  urgentQ.length = 0; backgroundQ.length = 0;
+  for (const p of pending.values()) p.reject(new Error("voice reloaded"));
+  pending.clear();
+  return new Promise((resolve, reject) => {
+    worker!.onmessage = (e: MessageEvent<{ type: string; id?: number; blob?: Blob; message?: string }>) => {
+      const m = e.data;
+      if (m.type === "loaded") {
+        resolve({
+          predict: (text: string, urgent = false) => new Promise<Blob>((res, rej) => {
+            const id = nextId++;
+            pending.set(id, { resolve: res, reject: rej });
+            (urgent ? urgentQ : backgroundQ).push({ id, text });
+            pumpWorker();
+          }),
+        } as Session);
+        return;
+      }
+      if (m.type === "result" || m.type === "error") {
+        if (m.id !== undefined) {
+          const p = pending.get(m.id);
+          pending.delete(m.id);
+          if (m.type === "result" && m.blob) p?.resolve(m.blob); else p?.reject(new Error(m.message ?? "piper error"));
+        } else if (m.type === "error") {
+          reject(new Error(m.message));
+        }
+        busy = false;
+        pumpWorker();
+      }
+    };
+    worker!.onerror = (e) => reject(new Error(e.message || "piper worker failed"));
+    worker!.postMessage({ type: "load", voiceId, extraPaths, wasmPaths });
+  });
+}
+
 // --- synthesis cache + playback ------------------------------------------
 const cache = new Map<string, Promise<Blob>>();
 const MAX_CACHE = 40;
 
-function synth(text: string): Promise<Blob> {
+function synth(text: string, urgent = false): Promise<Blob> {
   const hit = cache.get(text);
   if (hit) { cache.delete(text); cache.set(text, hit); return hit; } // LRU touch
   if (!session) return Promise.reject(new Error("piper not ready"));
-  const p = session.predict(text);
+  const p = session.predict(text, urgent);
   cache.set(text, p);
   p.catch(() => cache.delete(text));
   while (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value!);
   return p;
 }
 
-/** Synthesise upcoming prompts in the background (one at a time). */
-let prepQueue: Promise<unknown> = Promise.resolve();
+/** Synthesise upcoming prompts in the background (the worker does one at a time). */
+const MAX_BACKGROUND = 6;
 export function preparePiper(texts: string[]) {
   if (!session) return;
   for (const t of texts) {
-    if (cache.has(t)) continue;
-    prepQueue = prepQueue.then(() => synth(t)).catch(() => undefined);
+    if (cache.has(t) || backgroundQ.length >= MAX_BACKGROUND) continue;
+    void synth(t).catch(() => undefined);
   }
 }
 
@@ -206,7 +255,7 @@ let currentUrl: string | null = null;
 export function piperReady(): boolean { return !!session; }
 
 export async function speakPiper(text: string, opts: { rate: number; volume: number }): Promise<void> {
-  const blob = await synth(text);
+  const blob = await synth(text, true);
   stopPiper();
   currentUrl = URL.createObjectURL(blob);
   audio = new Audio(currentUrl);

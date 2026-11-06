@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "./storage";
 import type { Place } from "../nav/geocode";
 import { DEFAULT_OPTIONS, getRoutes, type Route, type RouteOptions } from "../nav/valhalla";
 import { useApp } from "./app";
@@ -132,7 +133,7 @@ export const usePlan = create<PlanState>()(
       },
     }),
     {
-      name: "fq-plan",
+      name: "fq-plan", storage: lazyStorage,
       // routes are cached separately; recompute on load
       partialize: ({ stops, options, active, planningGigId }) => ({ stops, options, active, planningGigId }),
       onRehydrateStorage: () => (s) => { if (s && s.stops.length >= 2) void s.compute(); },

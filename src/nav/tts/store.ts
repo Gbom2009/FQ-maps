@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { lazyStorage } from "../../store/storage";
 
 export type Engine = "piper" | "system";
 export type PiperStatus = "none" | "downloading" | "loading" | "ready" | "error";
@@ -47,7 +48,7 @@ export const useVoice = create<VoiceState>()(
       set: (p) => set(p),
     }),
     {
-      name: "fq-voice",
+      name: "fq-voice", storage: lazyStorage,
       partialize: ({ engine, piperVoice, systemVoice, rate, volume, downloaded }) => ({ engine, piperVoice, systemVoice, rate, volume, downloaded }),
     },
   ),

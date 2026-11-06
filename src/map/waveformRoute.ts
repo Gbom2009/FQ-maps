@@ -61,18 +61,20 @@ export function startWaveform(map: Map): () => void {
   const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let raf = 0;
   let lastFrame = 0;
+  let hidden = false;
   const t0 = performance.now();
 
   const frame = (now: number) => {
     raf = requestAnimationFrame(frame);
-    if (now - lastFrame < 33) return; // ~30 fps is plenty
+    // each frame re-uploads the route gradient: 20 fps in Plan, 10 fps while driving is plenty
+    if (now - lastFrame < (mode === "drive" ? 100 : 50)) return;
     lastFrame = now;
     if (!map.getLayer(PULSE_LAYER) || document.visibilityState !== "visible") return;
     if (reduce?.matches || !useMapSettings.getState().pulse) {
-      map.setPaintProperty(PULSE_LAYER, "line-opacity", 0);
+      if (!hidden) { map.setPaintProperty(PULSE_LAYER, "line-opacity", 0); hidden = true; }
       return;
     }
-    map.setPaintProperty(PULSE_LAYER, "line-opacity", 1);
+    if (hidden) { map.setPaintProperty(PULSE_LAYER, "line-opacity", 1); hidden = false; }
     const c = CFG[mode];
     map.setPaintProperty(PULSE_LAYER, "line-gradient", gradientFor(pulsesAt((now - t0) / 1000, mode), c.width));
   };
